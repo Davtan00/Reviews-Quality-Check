@@ -17,80 +17,86 @@ def generate_pdf_report(
         pdf = FPDF()
         pdf.set_margins(PDF_MARGIN, PDF_MARGIN)
         pdf.add_page()
-        pdf.set_font("Arial", size=PDF_FONT_SIZE)
-        pdf.set_title(os.path.basename(file_name))
+        
+        # Improved title formatting
+        pdf.set_font("Arial", size=16, style='B')
+        title = f"Analysis Report for {os.path.basename(file_name)}"
+        # Calculate title width and center it
+        title_w = pdf.get_string_width(title)
+        page_w = pdf.w - 2 * PDF_MARGIN
+        pdf.set_x((page_w - title_w) / 2 + PDF_MARGIN)
+        pdf.cell(title_w, 10, title, ln=True, align='C')
+        pdf.ln(5)
 
-        # Title
-        pdf.set_font("Arial", size=PDF_TITLE_SIZE, style='B')
-        pdf.cell(200, 10, txt=sanitize_text(f"Analysis Report for {file_name}"), ln=True, align='C')
+        # Add domain information
+        pdf.set_font("Arial", size=12, style='B')
+        domain = report.get('domain', 'general')
+        pdf.cell(0, 10, f"Domain: {domain.capitalize()}", ln=True)
+        pdf.ln(5)
+
+        # Basic Statistics section
+        pdf.set_font("Arial", size=14, style='B')
+        pdf.cell(0, 10, "Basic Statistics", ln=True)
+        pdf.set_font("Arial", size=10)
+        
+        stats = [
+            ("Total Reviews", report['total_reviews']),
+            ("Duplicates Found", report['duplicates_found']),
+            ("Sentiment Mismatches", len(sentiment_mismatches)),
+            ("High Similarity Pairs", len(similarity_pairs))
+        ]
+        
+        for label, value in stats:
+            pdf.cell(0, 8, f"{label}: {value}", ln=True)
+        pdf.ln(5)
+
+        # Quality Metrics section
+        pdf.set_font("Arial", size=14, style='B')
+        pdf.cell(0, 10, "Quality Metrics", ln=True)
+        pdf.set_font("Arial", size=10)
+        
+        metrics = [
+            ("Average Linguistic Quality", f"{report['average_linguistic_quality']:.2f}"),
+            ("Topic Diversity", f"{report['topic_diversity']:.2f}"),
+            ("Topic Coherence", f"{report['dominant_topic_coherence']:.2f}"),
+            ("Average Sentiment Confidence", f"{report['sentiment_confidence']:.2f}")
+        ]
+        
+        for label, value in metrics:
+            pdf.cell(0, 8, f"{label}: {value}", ln=True)
+        pdf.ln(5)
+
+        # Text Diversity section
+        pdf.set_font("Arial", size=14, style='B')
+        pdf.cell(0, 10, "Text Diversity", ln=True)
+        pdf.set_font("Arial", size=10)
+        
+        diversity = [
+            ("Unigram Diversity", f"{report['unigram_diversity']:.2f}"),
+            ("Bigram Diversity", f"{report['bigram_diversity']:.2f}"),
+            ("Trigram Diversity", f"{report['trigram_diversity']:.2f}")
+        ]
+        
+        for label, value in diversity:
+            pdf.cell(0, 8, f"{label}: {value}", ln=True)
         pdf.ln(10)
 
-        # Define sections for the report
-        sections = {
-            "Basic Statistics": {
-                "Total Reviews": report["total_reviews"],
-                "Duplicates Found": len(duplicates),
-                "Sentiment Mismatches": len(sentiment_mismatches),
-                "High Similarity Pairs": len(similarity_pairs)
-            },
-            "Quality Metrics": {
-                "Average Linguistic Quality": f"{report['average_linguistic_quality']:.2f}",
-                "Topic Diversity": f"{report['topic_diversity']:.2f}",
-                "Topic Coherence": f"{report['dominant_topic_coherence']:.2f}",
-                "Average Sentiment Confidence": f"{report['sentiment_confidence']:.2f}"
-            },
-            "Text Diversity": {
-                "Unigram Diversity": f"{report['unigram_diversity']:.2f}",
-                "Bigram Diversity": f"{report['bigram_diversity']:.2f}",
-                "Trigram Diversity": f"{report['trigram_diversity']:.2f}"
-            }
-        }
-
-        # Add sections to report
-        for section_title, metrics in sections.items():
-            pdf.set_font("Arial", size=14, style='B')
-            pdf.cell(0, 10, txt=section_title, ln=True)
-            pdf.set_font("Arial", size=12)
-            for metric_name, value in metrics.items():
-                pdf.cell(0, 10, txt=sanitize_text(f"{metric_name}: {value}"), ln=True)
-            pdf.ln(5)
-
-        # Add detailed sections if data is available
-        if duplicates:
-            pdf.add_page()
-            pdf.set_font("Arial", size=14, style='B')
-            pdf.cell(0, 10, txt="Duplicate Reviews", ln=True)
-            pdf.set_font("Arial", size=10)
-            for duplicate in duplicates:
-                pdf.multi_cell(0, 10, txt=sanitize_text(
-                    f"ID: {duplicate['id']}\n"
-                    f"Text: {duplicate['text']}\n"
-                ))
-
+        # Sentiment Mismatches section with improved formatting
         if sentiment_mismatches:
             pdf.add_page()
             pdf.set_font("Arial", size=14, style='B')
-            pdf.cell(0, 10, txt="Sentiment Mismatches", ln=True)
+            pdf.cell(0, 10, "Sentiment Mismatches", ln=True)
             pdf.set_font("Arial", size=10)
+            
             for mismatch in sentiment_mismatches:
-                formatted_text = format_sentiment_mismatch(mismatch)
-                pdf.multi_cell(0, 10, txt=sanitize_text(formatted_text))
-                pdf.ln(5)  # Add extra space between entries
+                pdf.multi_cell(0, 8, f"ID: {mismatch['id']}")
+                pdf.multi_cell(0, 8, f"Text: {mismatch['text']}")
+                pdf.multi_cell(0, 8, f"Expected: {mismatch['expected']}")
+                pdf.multi_cell(0, 8, f"Actual: {mismatch['actual']}")
+                pdf.multi_cell(0, 8, f"Confidence: {mismatch['confidence']:.2f}")
+                pdf.multi_cell(0, 8, "_" * 80)
+                pdf.ln(5)
 
-        if similarity_pairs:
-            pdf.add_page()
-            pdf.set_font("Arial", size=14, style='B')
-            pdf.cell(0, 10, txt="Similar Review Pairs", ln=True)
-            pdf.set_font("Arial", size=10)
-            for pair in similarity_pairs:
-                pdf.multi_cell(0, 10, txt=sanitize_text(
-                    f"Pair {pair['pair'][0]} - {pair['pair'][1]}\n"
-                    f"Similarity: {pair['combined_similarity']:.2f}\n"
-                    f"Text 1: {pair['texts'][0]}\n"
-                    f"Text 2: {pair['texts'][1]}\n"
-                ))
-
-        # Save the PDF
         pdf.output(file_name)
         print(f"PDF report generated successfully: {file_name}")
         
