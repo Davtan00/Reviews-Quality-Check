@@ -17,3 +17,4 @@ venv/
 
 # Generated data
 Generated Data/
+/pycache/*
