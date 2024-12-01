@@ -381,27 +381,36 @@ def analyze_reviews_comprehensively(data):
     }
 
 def main():
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s'
-    )
+    logging.info("Starting review analysis...")
     
     data_folder = Path(GENERATED_DATA_FOLDER)
     report_folder = Path(REPORT_FOLDER)
     
-    for file_path in data_folder.glob('*.json'):
+    # Add logging to see what files are found
+    json_files = list(data_folder.glob('*.json'))
+    logging.info(f"Found {len(json_files)} JSON files to process: {[f.name for f in json_files]}")
+    
+    for file_path in json_files:
         try:
+            logging.info(f"Processing file: {file_path}")
             results = process_file(file_path)
             report_path = report_folder / f"{file_path.stem}_report.pdf"
+            
+            # Add logging before and after report generation
+            logging.info(f"Generating report for {file_path.stem}")
             generate_pdf_report(
-    file_name=str(report_path),
-    report=results,
-    duplicates=results['duplicates'],
-    sentiment_mismatches=results['sentiment_mismatches'],
-    similarity_pairs=results['similarity']
-)
+                file_name=str(report_path),
+                report=results,
+                duplicates=results['duplicates'],
+                sentiment_mismatches=results['sentiment_mismatches'],
+                similarity_pairs=results['similarity']
+            )
+            logging.info(f"Successfully generated report: {report_path}")
+            
         except Exception as e:
             logging.error(f"Failed to process {file_path}: {str(e)}")
+            # Add stack trace for better error diagnosis
+            logging.exception("Detailed error information:")
             continue
 
 if __name__ == "__main__":

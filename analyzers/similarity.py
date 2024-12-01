@@ -2,6 +2,9 @@ from sentence_transformers import SentenceTransformer
 from nltk import ngrams
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
+from typing import List, Dict
+from tqdm import tqdm
+import logging
 try:
     from gensim.models.ldamulticore import LdaMulticore
 except ImportError:
@@ -22,8 +25,9 @@ class SophisticatedSimilarityAnalyzer:
         self.model = SentenceTransformer('all-MiniLM-L6-v2')
         self.semantic_threshold = 0.85
         self.ngram_threshold = 0.7
-        self.optimal_batch_size = 2000
-    
+        self.batch_size = 500  # TODO: Make this dynamic using psutil,platform etc.
+        self.chunk_size = 2000
+
     def _get_embeddings(self, texts):
         """Generate embeddings for all texts using the sentence transformer model"""
         return self.model.encode(texts)
@@ -47,53 +51,52 @@ class SophisticatedSimilarityAnalyzer:
         words = text.lower().split()
         return [''.join(gram) for gram in ngrams(words, n)]
     
-    def analyze_similarity(self, texts, batch_size=None):
-        """
-        Analyze similarity with hardware-optimized batching
-        """
-        batch_size = batch_size or self.optimal_batch_size
+    def analyze_similarity(self, texts: List[str]) -> Dict:
+        """Analyze similarity between texts using batched processing and memory-efficient comparison"""
+        logging.info(f"Processing {len(texts)} texts in batches...")
         
-        if len(texts) > batch_size:
-            print(f"Processing {len(texts)} texts in batches...")
-            results = np.zeros((len(texts), len(texts)))
-            for i in range(0, len(texts), batch_size):
-                batch = texts[i:i+batch_size]
-                batch_result = self._process_batch(batch)
-                results[i:i+batch_size, i:i+batch_size] = batch_result['similarity_matrix']
-            return self._merge_results([{'similarity_matrix': results}])
-        return self._process_batch(texts)
-    # TODO: Stop wasting time on this and just make an approach that works for most in most cases
-    def _process_batch(self, texts):
-        """Process a batch with optimized numpy operations"""
-        # Pre-allocate arrays for better memory usage
-        embeddings = self._get_embeddings(texts)
-        semantic_similarities = cosine_similarity(embeddings)
+        similar_pairs = []
+        total_similarity = 0
+        pair_count = 0
         
-        # Use numpy operations instead of nested loops
-        indices = np.triu_indices(len(texts), k=1)
-        semantic_sims = semantic_similarities[indices]
+        for i in range(0, len(texts), self.chunk_size):
+            chunk_texts = texts[i:i + self.chunk_size]
+            chunk_embeddings = []
+            
+            # Calculate embeddings for current chunk
+            for j in tqdm(range(0, len(chunk_texts), self.batch_size), 
+                         desc=f"Processing chunk {i//self.chunk_size + 1}/{(len(texts)-1)//self.chunk_size + 1}"):
+                batch = chunk_texts[j:j + self.batch_size]
+                batch_embeddings = self.model.encode(batch)
+                chunk_embeddings.extend(batch_embeddings)
+            
+            chunk_embeddings = np.array(chunk_embeddings)
+            
+            # Compare current chunk with itself
+            similarity_matrix = cosine_similarity(chunk_embeddings)
+            
+            # Find similar pairs within the chunk
+            for j in range(len(chunk_texts)):
+                for k in range(j + 1, len(chunk_texts)):
+                    similarity = similarity_matrix[j][k]
+                    total_similarity += similarity
+                    pair_count += 1
+                    
+                    if similarity > self.semantic_threshold:
+                        similar_pairs.append({
+                            'text1': chunk_texts[j],
+                            'text2': chunk_texts[k],
+                            'similarity': float(similarity)
+                        })
+            
+            # Clear memory
+            del similarity_matrix
+            del chunk_embeddings
         
-        # Initialize results with numpy arrays
-        high_similarity_pairs = []
-        mask = semantic_sims >= self.semantic_threshold * 0.8
-        
-        if np.any(mask):
-            for idx in np.where(mask)[0]:
-                i, j = indices[0][idx], indices[1][idx]
-                ngram_sim = self._get_ngram_similarity(texts[i], texts[j])
-                combined_sim = (semantic_sims[idx] * 0.7) + (ngram_sim * 0.3)
-                
-                if combined_sim >= self.semantic_threshold:
-                    high_similarity_pairs.append({
-                        'index1': int(i),
-                        'index2': int(j),
-                        'similarity': float(combined_sim),
-                        'semantic_similarity': float(semantic_sims[idx]),
-                        'ngram_similarity': float(ngram_sim)
-                    })
+        average_similarity = total_similarity / pair_count if pair_count > 0 else 0
         
         return {
-            'average_similarity': float(np.mean(semantic_sims)),
-            'high_similarity_pairs': high_similarity_pairs,
-            'similarity_matrix': semantic_similarities
+            'average_similarity': average_similarity,
+            'high_similarity_pairs': similar_pairs,
+            'total_pairs_analyzed': pair_count
         }

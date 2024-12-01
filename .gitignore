@@ -1,7 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+venv/
+
+# Data files
 *.pdf
 *.json
 *.csv
 *.txt
 *.xlsx
 *.xls
-venv/
+*.ipynb
+
+# Generated data
+Generated Data/
