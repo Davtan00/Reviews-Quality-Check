@@ -328,13 +328,24 @@ class SentimentValidator:
     while accounting for domain context and linguistic nuances.
     """
     def __init__(self):
-        # Load a lightweight BERT model fine-tuned for sentiment
+        # Load a lightweight BERT model fine-tuned for sentiment(Attempt it with a stronger model yourself)
         model_name = "distilbert-base-uncased-finetuned-sst-2-english"
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
         
         # High confidence threshold for flagging mismatches
-        self.confidence_threshold = 0.92
+        self.confidence_threshold = 0.95
+
+        # Common contrast markers that often indicate neutral sentiment
+        self.contrast_markers = {'but', 'however', 'although', 'though', 'while', 'yet'}
+        
+        # Add more neutral indicators
+        self.neutral_indicators = {
+            'adequate', 'adequately', 'average', 'basic', 'decent', 'fair', 'moderate', 
+            'normal', 'ordinary', 'reasonable', 'standard', 'typical', 'usual',
+            'performs adequately', 'works fine', 'meets expectations', 'as expected',
+            'suitable for', 'acceptable', 'sufficient', 'satisfactory'
+        }
         
         # Common domain-specific positive/negative indicators
         self.domain_indicators = {
@@ -380,8 +391,6 @@ class SentimentValidator:
             }
         }
         
-        # Common contrast markers that often indicate neutral sentiment
-        self.contrast_markers = {'but', 'however', 'although', 'though', 'while', 'yet'}
 
     def _preprocess_text(self, text: str) -> str:
         """Basic text preprocessing"""
@@ -414,9 +423,25 @@ class SentimentValidator:
         Validate if the labeled sentiment matches detected sentiment,
         flagging only high-confidence mismatches
         """
-        # Check for contrast markers that suggest neutral sentiment
-        has_contrast = any(marker in text.lower() for marker in self.contrast_markers)
+        text_lower = text.lower()
         
+        # Check for neutral indicators first
+        has_neutral_indicator = any(indicator in text_lower for indicator in self.neutral_indicators)
+        
+        # Check for contrast markers
+        has_contrast = any(marker in text_lower for marker in self.contrast_markers)
+        
+        # If text has neutral indicators or contrast markers, trust the neutral label
+        if (has_neutral_indicator or has_contrast) and labeled_sentiment == 'neutral':
+            return {
+                'is_mismatch': False,
+                'confidence': 0.0,
+                'predicted': 'neutral',
+                'labeled': labeled_sentiment,
+                'has_contrast': has_contrast,
+                'has_neutral': has_neutral_indicator
+            }
+
         # Get domain-specific indicators
         domain_check = self._check_domain_indicators(text, domain) if domain else {
             'has_indicators': False, 
@@ -432,21 +457,24 @@ class SentimentValidator:
             confidence = confidence.item()
 
         # Adjust confidence based on various factors
-        if has_contrast:
-            confidence *= 0.8  # Reduce confidence if contrasting statements present
+        if has_contrast or has_neutral_indicator:
+            confidence *= 0.8  # Reduce confidence
         
         confidence += domain_check['confidence_modifier']
         
         # Map model output to sentiment labels
         predicted_sentiment = 'positive' if predicted.item() == 1 else 'negative'
         
-        # Handle neutral cases
-        if has_contrast or (confidence < 0.7):
+        # Handle neutral cases more aggressively
+        if has_neutral_indicator or has_contrast or (confidence < 0.8):
             predicted_sentiment = 'neutral'
 
-        # Flag only high-confidence mismatches
-        is_mismatch = (predicted_sentiment != labeled_sentiment and 
-                      confidence > self.confidence_threshold)
+        # Flag only high-confidence mismatches, being more lenient with neutral labels
+        is_mismatch = (
+            predicted_sentiment != labeled_sentiment and 
+            confidence > self.confidence_threshold and
+            not (labeled_sentiment == 'neutral' and (has_neutral_indicator or has_contrast))
+        )
 
         return {
             'is_mismatch': is_mismatch,
@@ -454,27 +482,9 @@ class SentimentValidator:
             'predicted': predicted_sentiment,
             'labeled': labeled_sentiment,
             'has_contrast': has_contrast,
-            'domain_indicators': domain_check['has_indicators']
+            'has_neutral': has_neutral_indicator
         }
 
-def enhanced_sentiment_validation(data):
-    analyzer = SophisticatedSentimentAnalyzer()
-    results = []
-    
-    for entry in data:
-        analysis = analyzer.analyze(entry['text'])
-        if analysis['sentiment'] != entry['sentiment']:
-            results.append({
-                'id': entry['id'],
-                'text': entry['text'],
-                'expected': entry['sentiment'],
-                'actual': analysis['sentiment'],
-                'confidence': analysis['confidence'],
-                'compound_score': analysis['compound_score'],
-                'component_scores': analysis['component_scores']
-            })
-    
-    return results
 
 class SophisticatedSimilarityAnalyzer:
     """
@@ -778,12 +788,13 @@ class SophisticatedLinguisticAnalyzer:
 def analyze_reviews_comprehensively(data):
     """
     Master analysis function combining:
-    - Topic modeling
-    - Linguistic quality assessment
-    - Sentiment analysis
-    - Similarity detection
+    - Topic modeling (using SophisticatedTopicAnalyzer)
+    - Linguistic quality assessment (using SophisticatedLinguisticAnalyzer)
     
-    Provides holistic view of review quality, authenticity, and content distribution
+    Note: Sentiment validation and similarity detection are handled separately by 
+    validate_sentiments() and calculate_similarity() respectively.
+    
+    Provides holistic view of review content quality and linguistic characteristics.
     """
     topic_analyzer = SophisticatedTopicAnalyzer()
     linguistic_analyzer = SophisticatedLinguisticAnalyzer()
