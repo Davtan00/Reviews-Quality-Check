@@ -1,0 +1,7 @@
+*.pdf
+*.json
+*.csv
+*.txt
+*.xlsx
+*.xls
+venv/
