@@ -20,7 +20,7 @@ MAX_ITERATIONS = 100  # Maximum iterations for topic modeling
 NUM_PASSES = 5  # Number of passes for LDA
 
 # Report Configuration
-MAX_TEXT_LENGTH = 200  # Maximum length for text snippets in reports
+MAX_TEXT_LENGTH = 1000  # Maximum length for text snippets in reports
 PDF_FONT_SIZE = 12  # Default font size for PDF reports
 PDF_TITLE_SIZE = 16  # Font size for PDF titles
 PDF_MARGIN = 15  # PDF margin in points

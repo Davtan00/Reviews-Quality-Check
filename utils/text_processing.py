@@ -6,19 +6,12 @@ from typing import Union
 
 def sanitize_text(text: str) -> str:
     """
-    Sanitize text by removing non-ASCII characters and normalizing Unicode.
-    Also handles special characters for PDF compatibility.
-    
-    Args:
-        text (str): Input text to sanitize
-        
-    Returns:
-        str: Sanitized text
+    Enhanced sanitize text function with better PDF compatibility
     """
     if not isinstance(text, str):
         return str(text)
 
-    # Common Unicode replacements for PDF compatibility
+    # Expanded replacements for PDF compatibility
     replacements = {
         '"': '"',
         '"': '"',
@@ -36,6 +29,11 @@ def sanitize_text(text: str) -> str:
         '\u2013': '-',  # en dash
         '\u2014': '-',  # em dash
         '\u2026': '...',  # horizontal ellipsis
+        '\u00A0': ' ',  # non-breaking space
+        '\u00AD': '-',  # soft hyphen
+        '\u2212': '-',  # minus sign
+        '\u200B': '',   # zero-width space
+        '\uFEFF': '',   # zero-width no-break space
     }
     
     # Apply replacements
@@ -44,11 +42,15 @@ def sanitize_text(text: str) -> str:
 
     # Normalize Unicode characters
     normalized = unicodedata.normalize('NFKD', text)
+    
     # Convert to ASCII, removing non-ASCII characters
     ascii_text = normalized.encode('ascii', 'ignore').decode('ascii')
     
     # Remove any remaining non-printable characters
     ascii_text = re.sub(r'[^\x20-\x7E]', '', ascii_text)
+    
+    # Remove multiple spaces and trim
+    ascii_text = ' '.join(ascii_text.split())
     
     return ascii_text
 

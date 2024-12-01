@@ -2,7 +2,7 @@ from fpdf import FPDF
 from typing import Dict, List
 import os
 from config import PDF_FONT_SIZE, PDF_TITLE_SIZE, PDF_MARGIN, MAX_TEXT_LENGTH
-from utils.text_processing import sanitize_text
+from utils.text_processing import sanitize_text, clean_text, truncate_text
 
 
 def generate_pdf_report(
@@ -15,12 +15,15 @@ def generate_pdf_report(
     """Generate a structured PDF report with analysis results."""
     try:
         pdf = FPDF()
-        pdf.set_margins(PDF_MARGIN, PDF_MARGIN)
+        pdf.set_auto_page_break(auto=True, margin=15)
         pdf.add_page()
+        
+        # Sanitize the file name for the title
+        clean_filename = sanitize_text(os.path.basename(file_name))
+        title = f"Analysis Report for {clean_filename}"
         
         # Improved title formatting
         pdf.set_font("Arial", size=16, style='B')
-        title = f"Analysis Report for {os.path.basename(file_name)}"
         # Calculate title width and center it
         title_w = pdf.get_string_width(title)
         page_w = pdf.w - 2 * PDF_MARGIN
@@ -89,10 +92,16 @@ def generate_pdf_report(
             pdf.set_font("Arial", size=10)
             
             for mismatch in sentiment_mismatches:
-                pdf.multi_cell(0, 8, f"ID: {mismatch['id']}")
-                pdf.multi_cell(0, 8, f"Text: {mismatch['text']}")
-                pdf.multi_cell(0, 8, f"Expected: {mismatch['expected']}")
-                pdf.multi_cell(0, 8, f"Actual: {mismatch['actual']}")
+                # Sanitize all text fields
+                clean_id = sanitize_text(str(mismatch['id']))
+                clean_text = sanitize_text(truncate_text(mismatch['text'], MAX_TEXT_LENGTH))
+                clean_expected = sanitize_text(str(mismatch['expected']))
+                clean_actual = sanitize_text(str(mismatch['actual']))
+                
+                pdf.multi_cell(0, 8, f"ID: {clean_id}")
+                pdf.multi_cell(0, 8, f"Text: {clean_text}")
+                pdf.multi_cell(0, 8, f"Expected: {clean_expected}")
+                pdf.multi_cell(0, 8, f"Actual: {clean_actual}")
                 pdf.multi_cell(0, 8, f"Confidence: {mismatch['confidence']:.2f}")
                 pdf.multi_cell(0, 8, "_" * 80)
                 pdf.ln(5)
