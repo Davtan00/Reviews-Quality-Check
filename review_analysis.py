@@ -1,45 +1,46 @@
 import os
 import json
 import pandas as pd
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-from textblob import TextBlob
-from collections import Counter
-from nltk.corpus import stopwords
+import sys
 import nltk
-from textstat import flesch_reading_ease
-from fpdf import FPDF
 import numpy as np
-import unicodedata
+from typing import Dict, List, Any
+from textblob import TextBlob
+from nltk.tokenize import word_tokenize
+from nltk.util import ngrams
+from nltk.corpus import stopwords
 from sklearn.decomposition import LatentDirichletAllocation
 from sklearn.feature_extraction.text import CountVectorizer
-from nltk import ngrams
-from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-import spacy
-import re
-from sentence_transformers import SentenceTransformer
-from collections import defaultdict
-from gensim.models import CoherenceModel, LdaModel
+from analyzers.sentiment import SentimentValidator
+from analyzers.similarity import SophisticatedSimilarityAnalyzer
+from analyzers.topic import SophisticatedTopicAnalyzer
+from analyzers.linguistics import SophisticatedLinguisticAnalyzer
+from utils.text_processing import sanitize_text, clean_text, calculate_flesch_reading_ease
+from utils.report_generator import generate_pdf_report
+from config import (
+    GENERATED_DATA_FOLDER, 
+    REPORT_FOLDER,
+    MIN_TOPICS,
+    MAX_TOPICS,
+    SIMILARITY_THRESHOLD,
+    SENTIMENT_CONFIDENCE_THRESHOLD
+)
+from contextlib import contextmanager
+import logging
+from pathlib import Path
 from gensim.corpora import Dictionary
-from gensim.models.phrases import Phrases, Phraser
-from nltk.tokenize import sent_tokenize
-import language_tool_python
-from textstat import flesch_reading_ease, dale_chall_readability_score
-from nltk.tokenize import word_tokenize
-from nltk.util import ngrams as nltk_ngrams
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
-import torch
-from typing import Dict
+from gensim.models.ldamodel import LdaModel
+from gensim.models.ldamulticore import LdaMulticore
+from multiprocessing import cpu_count
 
-nltk.download('stopwords')
-nltk.download('punkt')
-nltk.download('averaged_perceptron_tagger')
-
-GENERATED_DATA_FOLDER = "Generated Data"
-REPORT_FOLDER = "Report"
-
-os.makedirs(GENERATED_DATA_FOLDER, exist_ok=True)
-os.makedirs(REPORT_FOLDER, exist_ok=True)
+def initialize_nltk():
+    """Initialize NLTK resources once at startup"""
+    required_packages = ['stopwords', 'punkt', 'averaged_perceptron_tagger']
+    for package in required_packages:
+        try:
+            nltk.data.find(f'tokenizers/{package}')
+        except LookupError:
+            nltk.download(package, quiet=True)
 
 def find_duplicates(data):
     texts = [entry['text'] for entry in data]
@@ -55,7 +56,7 @@ def analyze_quality(data):
     results = []
     for entry in data:
         text = entry['text']
-        score = flesch_reading_ease(text)
+        score = calculate_flesch_reading_ease(text)
         results.append({
             "id": entry['id'],
             "text": text,
@@ -63,23 +64,15 @@ def analyze_quality(data):
         })
     return results
 
-def validate_sentiments(data):
+def validate_sentiments_batch(data: List[Dict[str, Any]], domain: str) -> List[Dict[str, Any]]:
     """
-    Multi-stage sentiment validation pipeline:
-    1. Applies BERT-based sentiment prediction
-    2. Checks domain-specific sentiment indicators
-    3. Detects contrast markers suggesting neutral sentiment
-    4. Applies confidence thresholding
-    
-    Only returns mismatches with high confidence (>0.92) to minimize false positives.
+    Batch sentiment validation for multiple reviews.
+    Returns only high-confidence mismatches.
     """
     validator = SentimentValidator()
     mismatches = []
     
     for entry in data:
-        # Determine domain from entry if available
-        domain = entry.get('domain', None)
-        
         result = validator.validate_sentiment(
             text=entry['text'],
             labeled_sentiment=entry['sentiment'],
@@ -97,183 +90,230 @@ def validate_sentiments(data):
     
     return mismatches
 
-def sanitize_text(text):
-    return unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
-
-def generate_pdf_report(file_name, report, duplicates, sentiment_mismatches):
-    """
-    Structured PDF report generation with error handling:
-    1. Basic statistics (review counts, duplicates)
-    2. Similarity analysis (average, high-similarity pairs)
-    3. Linguistic metrics (quality scores, n-gram diversity)
-    4. Topic analysis (diversity, coherence)
-    5. Sentiment analysis (mismatches, confidence)
-    6. Detailed examples of issues found
-    
-    Handles Unicode normalization and proper PDF formatting for all text content.
-    """
-    print("\nInside PDF generation:")
-    print(f"Number of sentiment mismatches received: {len(sentiment_mismatches)}")
-    if sentiment_mismatches:
-        print("Keys in first mismatch:")
-        print(list(sentiment_mismatches[0].keys()))
-        print("Sample of first mismatch data:")
-        print(json.dumps(sentiment_mismatches[0], indent=2))
-
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
-    pdf.set_title(file_name)
-
-    pdf.set_font("Arial", size=16, style='B')
-    pdf.cell(200, 10, txt=sanitize_text(f"Analysis Report for {file_name}"), ln=True, align='C')
-    pdf.ln(10)
-
-    sections = {
-        "Basic Statistics": {
-            "Total Reviews": report["total_reviews"],
-            "Duplicates Found": report["duplicates_found"],
-        },
-        "Similarity Analysis": {
-            "Average Similarity": f"{report['average_similarity']:.2f}",
-            "High Similarity Pairs": report["high_similarity_pairs"],
-        },
-        "Linguistic Analysis": {
-            "Average Linguistic Quality": f"{report['average_linguistic_quality']:.2f}",
-            "Unigram Diversity": f"{report['unigram_diversity']:.2f}",
-            "Bigram Diversity": f"{report['bigram_diversity']:.2f}",
-            "Trigram Diversity": f"{report['trigram_diversity']:.2f}",
-        },
-        "Topic Analysis": {
-            "Topic Diversity": f"{report['topic_diversity']:.2f}",
-            "Topic Coherence": f"{report['dominant_topic_coherence']:.2f}",
-        },
-        "Sentiment Analysis": {
-            "Sentiment Mismatches": report["sentiment_mismatches"],
-            "Average Confidence": f"{report['sentiment_confidence']:.2f}",
-        }
-    }
-
-    for section_title, metrics in sections.items():
-        pdf.set_font("Arial", size=14, style='B')
-        pdf.cell(0, 10, txt=section_title, ln=True)
-        pdf.set_font("Arial", size=12)
-        for metric_name, value in metrics.items():
-            pdf.cell(0, 10, txt=sanitize_text(f"{metric_name}: {value}"), ln=True)
-        pdf.ln(5)
-
-    if duplicates:
-        pdf.set_font("Arial", size=12, style='B')
-        pdf.cell(0, 10, txt="Duplicates Found:", ln=True)
-        pdf.set_font("Arial", size=10)
-        for duplicate in duplicates:
-            pdf.multi_cell(0, 10, txt=sanitize_text(f"ID: {duplicate['id']} - Text: {duplicate['text']}"))
-        pdf.ln(10)
-
-    if sentiment_mismatches:
-        pdf.set_font("Arial", size=12, style='B')
-        pdf.cell(0, 10, txt="Sentiment Mismatches:", ln=True)
-        pdf.set_font("Arial", size=10)
-        for mismatch in sentiment_mismatches:
-            try:
-                polarity = mismatch.get('component_scores', {}).get('textblob', {}).get('polarity', 0)
-                
-                pdf.multi_cell(
-                    0, 10, 
-                    txt=sanitize_text(
-                        f"ID: {mismatch.get('id', 'N/A')} - Text: {mismatch.get('text', 'N/A')}\n"
-                        f"Expected: {mismatch.get('expected', 'N/A')} - Actual: {mismatch.get('actual', 'N/A')}\n"
-                        f"Confidence: {mismatch.get('confidence', 0):.2f} - Polarity: {polarity:.2f}"
-                    )
-                )
-            except Exception as e:
-                print(f"Error processing mismatch in PDF: {str(e)}")
-                print("Problematic mismatch data:")
-                print(json.dumps(mismatch, indent=2))
-        pdf.ln(10)
-
-    output_path = os.path.join(REPORT_FOLDER, f"{file_name.replace('.json', '.pdf')}")
-    pdf.output(output_path)
-
-def process_file(file_path):
-    with open(file_path, 'r') as f:
-        data = json.load(f)["generated_data"]
-
-    duplicates = find_duplicates(data)
-    similarity_result = calculate_similarity(data)
-    similarity_matrix = similarity_result['similarity_matrix']
-    quality_scores = analyze_quality(data)
-    sentiment_mismatches = validate_sentiments(data)
-    
-    similarity_scores = np.tril(similarity_matrix, k=-1).flatten()
-    high_similarity = similarity_scores[similarity_scores > 0.9]
-
-    report = {
-        "total_reviews": len(data),
-        "duplicates_found": len(duplicates),
-        "average_similarity": float(np.mean(similarity_scores)),
-        "high_similarity_pairs": len(high_similarity),
-        "average_linguistic_quality": float(np.mean([q['flesch_score'] for q in quality_scores if 'flesch_score' in q and q['flesch_score'] is not None])),
-        "sentiment_mismatches": len(sentiment_mismatches),
-        "sentiment_confidence": float(np.mean([m.get("confidence", 1.0) for m in sentiment_mismatches])) if sentiment_mismatches else 1.0
-    }
-
-    try:
-        topic_analysis = analyze_topic_coherence(data)
-        ngram_diversity = analyze_ngram_diversity(data)
+class ResourceManager:
+    def __init__(self):
+        self.active_resources = []
+        self.model_cache = {}
         
-        report.update({
-            "topic_diversity": float(topic_analysis.get("topic_diversity", 0.0)),
-            "dominant_topic_coherence": float(topic_analysis.get("dominant_topic_distribution", 0.0)),
-            "unigram_diversity": float(ngram_diversity.get("1-gram_diversity", 0.0)),
-            "bigram_diversity": float(ngram_diversity.get("2-gram_diversity", 0.0)),
-            "trigram_diversity": float(ngram_diversity.get("3-gram_diversity", 0.0)),
-        })
-    except Exception as e:
-        print(f"Warning: Error in additional analyses: {str(e)}")
-        report.update({
-            "topic_diversity": 0.0,
-            "dominant_topic_coherence": 0.0,
-            "unigram_diversity": 0.0,
-            "bigram_diversity": 0.0,
-            "trigram_diversity": 0.0,
-        })
-    
-    file_name = os.path.basename(file_path)
-    generate_pdf_report(file_name, report, duplicates, sentiment_mismatches)
+    def register(self, resource: Any) -> None:
+        """Register a resource for cleanup"""
+        self.active_resources.append(resource)
+        
+    def cleanup(self) -> None:
+        """Clean up all registered resources"""
+        for resource in reversed(self.active_resources):
+            try:
+                if hasattr(resource, 'cleanup'):
+                    resource.cleanup()
+                elif hasattr(resource, 'close'):
+                    resource.close()
+            except Exception as e:
+                logging.error(f"Error cleaning up resource {resource}: {str(e)}")
+        self.active_resources.clear()
+        self.model_cache.clear()
 
-def analyze_topic_coherence(data, n_topics=5):
+@contextmanager
+def managed_analyzers():
+    """Context manager for analyzer resources"""
+    resource_manager = ResourceManager()
+    try:
+        # Initialize analyzers with resource management
+        sentiment_validator = SentimentValidator()
+        similarity_analyzer = SophisticatedSimilarityAnalyzer()
+        topic_analyzer = SophisticatedTopicAnalyzer()
+        
+        # Register resources for cleanup
+        resource_manager.register(sentiment_validator)
+        resource_manager.register(similarity_analyzer)
+        resource_manager.register(topic_analyzer)
+        
+        yield {
+            'sentiment': sentiment_validator,
+            'similarity': similarity_analyzer,
+            'topic': topic_analyzer
+        }
+    finally:
+        resource_manager.cleanup()
+
+def process_file(file_path: Path) -> Dict[str, Any]:
+    """Process a single file with proper resource management"""
+    with managed_analyzers() as analyzers:
+        try:
+            print(f"\nProcessing file: {file_path}")
+            
+            with open(file_path, 'r') as f:
+                json_data = json.load(f)
+                data = json_data["generated_data"]
+                domain = json_data.get("domain", "general")
+            
+            total_reviews = len(data)
+            
+            print("Finding duplicates...")
+            duplicates = find_duplicates(data)
+            
+            print("Calculating similarities...")
+            similarity_result = analyzers['similarity'].analyze_similarity(
+                [entry['text'] for entry in data]
+            )
+            
+            print("Analyzing quality...")
+            quality_scores = analyze_quality(data)
+            
+            print("Validating sentiments...")
+            sentiment_mismatches = validate_sentiments_batch(data, domain)
+            
+            print("Analyzing topics...")
+            topic_analysis = analyze_topic_coherence(data, n_topics=5)
+            
+            # Calculate n-gram diversity
+            ngram_diversity = analyze_ngram_diversity(data)
+            
+            # Prepare the report dictionary with all required fields
+            return {
+                'total_reviews': total_reviews,
+                'duplicates_found': len(duplicates),
+                'average_similarity': similarity_result.get('average_similarity', 0.0),
+                'high_similarity_pairs': len(similarity_result.get('high_similarity_pairs', [])),
+                'average_linguistic_quality': sum(s['flesch_score'] for s in quality_scores) / total_reviews if quality_scores else 0,
+                'unigram_diversity': ngram_diversity.get('1-gram_diversity', 0.0),
+                'bigram_diversity': ngram_diversity.get('2-gram_diversity', 0.0),
+                'trigram_diversity': ngram_diversity.get('3-gram_diversity', 0.0),
+                'topic_diversity': topic_analysis.get('model_perplexity', 0.0),
+                'dominant_topic_coherence': max((t.get('coherence', 0.0) for t in topic_analysis.get('topics', [])), default=0.0),
+                'sentiment_mismatches': len(sentiment_mismatches),
+                'sentiment_confidence': sum(m['confidence'] for m in sentiment_mismatches) / len(sentiment_mismatches) if sentiment_mismatches else 0.0,
+                'duplicates': duplicates,
+                'similarity': similarity_result.get('high_similarity_pairs', []),
+                'sentiment_mismatches': sentiment_mismatches,
+                'topic_analysis_details': {
+                    'topics': {i: [t['term'] for t in topic['terms']] 
+                             for i, topic in enumerate(topic_analysis.get('topics', []))}
+                },
+                'linguistic_analysis': {
+                    'individual_scores': [{'overall_score': s['flesch_score'], 
+                                         'coherence_score': s['flesch_score'],  # TODO: Add more specific scores
+                                         'sophistication_score': s['flesch_score']} 
+                                        for s in quality_scores]
+                }
+            }
+            
+        except Exception as e:
+            logging.error(f"Error processing file {file_path}: {str(e)}")
+            raise
+# I might make a general version of this that can be used efficiently no matter the hardware and not just Ryzen 7 7800X3D
+def analyze_topic_coherence(data: List[Dict[str, Any]], n_topics: int = 5):
     """
-    Topic modeling with coherence optimization:
-    1. Vectorizes text using frequency-based features
-    2. Applies LDA to discover latent topics
-    3. Evaluates topic diversity and coherence
-    4. Returns topic distribution and quality metrics
+    Topic modeling optimized for high-performance hardware (Ryzen 7 7800X3D, 32GB DDR5)
+    using LdaMulticore for parallel processing.
     
-    Note: Uses CountVectorizer instead of TF-IDF to preserve absolute frequency information
-    which is important for LDA's probabilistic model.
+    Hardware optimization:
+    - Uses up to 12 cores (leaving 4 threads for system)
+    - Optimized chunk size for DDR5 memory
+    - Batch processing enabled for better parallelization
+    - Float32 dtype for memory efficiency
+    
+    Args:
+        data: List of dictionaries containing review data
+        n_topics: Number of topics to extract
+        
+    Returns:
+        Dict containing topic analysis results
     """
-    texts = [entry['text'] for entry in data]
+    # Preprocess and tokenize texts
+    logging.info("Starting text preprocessing...")
+    processed_texts = []
+    for entry in data:
+        text = clean_text(sanitize_text(entry['text']))
+        tokens = word_tokenize(text.lower())
+        stop_words = set(stopwords.words('english'))
+        tokens = [token for token in tokens if token not in stop_words]
+        processed_texts.append(tokens)
     
-    vectorizer = CountVectorizer(max_features=1000, stop_words='english')
-    doc_term_matrix = vectorizer.fit_transform(texts)
+    # Hardware-optimized settings for my Ryzen 7 7800X3D
+    n_cores = min(12, cpu_count() - 1)  # Use up to 12 threads, leaving 4 for the system
+    chunk_size = max(2000, len(processed_texts) // (n_cores * 4))  # Optimize chunk size based on data and cores
     
-    lda = LatentDirichletAllocation(n_components=n_topics, random_state=42)
-    lda_output = lda.fit_transform(doc_term_matrix)
+    logging.info(f"Using {n_cores} cores with chunk size of {chunk_size}")
     
-    feature_names = vectorizer.get_feature_names_out()
-    topics = {}
-    for topic_idx, topic in enumerate(lda.components_):
-        top_words = [feature_names[i] for i in topic.argsort()[:-10:-1]]
-        topics[f"Topic {topic_idx + 1}"] = top_words
+    # Create dictionary and corpus
+    dictionary = Dictionary(processed_texts)
+    dictionary.filter_extremes(no_below=5, no_above=0.7)
+    corpus = [dictionary.doc2bow(text) for text in processed_texts]
     
-    topic_diversity = np.mean([len(set(words)) for words in topics.values()])
-    
-    return {
-        "topics": topics,
-        "topic_diversity": topic_diversity,
-        "dominant_topic_distribution": np.mean(lda_output.max(axis=1))
+    # Updated parameters with only supported arguments
+    lda_params = {
+        'num_topics': n_topics,
+        'passes': 15,
+        'chunksize': chunk_size,
+        'workers': n_cores,
+        'random_state': 42,
+        'minimum_probability': 0.01,
+        'dtype': np.float32,
+        'per_word_topics': True
     }
+    
+    try:
+        logging.info("Starting LdaMulticore training with parallel processing...")
+        lda_model = LdaMulticore(
+            corpus=corpus,
+            id2word=dictionary,
+            **lda_params
+        )
+        logging.info("LdaMulticore training completed successfully")
+        
+    except Exception as e:
+        logging.error(f"LdaMulticore error: {str(e)}")
+        logging.warning("Falling back to single-core LdaModel (this will be slower)...")
+        # Remove multicore-specific parameters for fallback
+        multicore_params = ['workers', 'batch']
+        for param in multicore_params:
+            lda_params.pop(param, None)
+            
+        lda_model = LdaModel(
+            corpus=corpus,
+            id2word=dictionary,
+            **lda_params
+        )
+    
+    logging.info("Extracting topics and calculating distributions...")
+    
+    # Extract topics and their terms
+    topics = []
+    for topic_id in range(n_topics):
+        topic_terms = lda_model.show_topic(topic_id, topn=10)
+        topics.append({
+            'id': topic_id,
+            'terms': [{'term': term, 'weight': weight} for term, weight in topic_terms],
+            'coherence': calculate_topic_coherence(topic_terms)
+        })
+    
+    # Calculate document-topic distributions using parallel processing
+    doc_topics = []
+    for doc in corpus:
+        topic_dist = lda_model.get_document_topics(doc, minimum_probability=0.01)
+        doc_topics.append([{'topic_id': topic_id, 'weight': float(weight)} 
+                          for topic_id, weight in topic_dist])
+    
+    results = {
+        'topics': topics,
+        'doc_topic_distribution': doc_topics,
+        'model_perplexity': float(lda_model.log_perplexity(corpus)),
+        'num_terms': len(dictionary),
+        'num_documents': len(corpus),
+        'used_multicore': isinstance(lda_model, LdaMulticore)
+    }
+    
+    logging.info(f"Topic analysis completed using {'multicore' if results['used_multicore'] else 'single-core'} processing")
+    
+    return results
+
+def calculate_topic_coherence(topic_terms):
+    """Helper function to calculate coherence for a single topic"""
+    terms = [term for term, _ in topic_terms]
+    weights = [weight for _, weight in topic_terms]
+    
+    # Simple coherence measure based on term weights
+    return sum(w1 * w2 for w1, w2 in zip(weights[:-1], weights[1:])) / (len(weights) - 1)
 
 def analyze_ngram_diversity(data, n_range=(1, 3)):
     """
@@ -282,524 +322,48 @@ def analyze_ngram_diversity(data, n_range=(1, 3)):
     - Calculates unique n-gram ratio
     - Handles edge cases (empty/invalid text)
     - Returns normalized diversity scores
-    
-    Higher scores indicate more diverse vocabulary and sentence structure.
     """
-    texts = [entry['text'] for entry in data]
+    results = {}
+    stop_words = set(stopwords.words('english'))
     
-    diversity_metrics = {}
     for n in range(n_range[0], n_range[1] + 1):
         all_ngrams = []
         total_ngrams = 0
         
-        try:
-            for text in texts:
-                if not text or not isinstance(text, str):
-                    continue
-                    
-                tokens = word_tokenize(text.lower())
+        for entry in data:
+            text = entry['text']
+            if not text or not isinstance(text, str):
+                continue
                 
-                if len(tokens) >= n:
-                    text_ngrams = list(nltk_ngrams(sequence=tokens, n=n))
-                    all_ngrams.extend(text_ngrams)
-                    total_ngrams += len(text_ngrams)
+            # Tokenize and filter stop words for unigrams
+            tokens = word_tokenize(text.lower())
+            if n == 1:
+                tokens = [t for t in tokens if t not in stop_words]
             
-            if total_ngrams > 0:
-                unique_ngrams = len(set(all_ngrams))
-                diversity_metrics[f"{n}-gram_diversity"] = unique_ngrams / total_ngrams
-            else:
-                diversity_metrics[f"{n}-gram_diversity"] = 0.0
-                
-        except Exception as e:
-            print(f"Error processing {n}-grams: {str(e)}")
-            diversity_metrics[f"{n}-gram_diversity"] = 0.0
+            if len(tokens) >= n:
+                text_ngrams = list(ngrams(tokens, n))
+                all_ngrams.extend(text_ngrams)
+                total_ngrams += len(text_ngrams)
+        
+        if total_ngrams > 0:
+            unique_ngrams = len(set(all_ngrams))
+            diversity_score = unique_ngrams / total_ngrams
+            results[f"{n}-gram_diversity"] = diversity_score
+        else:
+            results[f"{n}-gram_diversity"] = 0.0
     
-    return diversity_metrics
-
-class SentimentValidator:
-    """
-    Advanced sentiment validation system that combines:
-    - BERT-based sentiment predictions
-    - Domain-specific sentiment indicators
-    - Contrast marker detection
-    - Confidence thresholding
-    
-    Designed to minimize false positives by only flagging high-confidence mismatches
-    while accounting for domain context and linguistic nuances.
-    """
-    def __init__(self):
-        # Load a lightweight BERT model fine-tuned for sentiment(Attempt it with a stronger model yourself)
-        model_name = "distilbert-base-uncased-finetuned-sst-2-english"
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
-        
-        # High confidence threshold for flagging mismatches
-        self.confidence_threshold = 0.95
-
-        # Common contrast markers that often indicate neutral sentiment
-        self.contrast_markers = {'but', 'however', 'although', 'though', 'while', 'yet'}
-        
-        # Add more neutral indicators
-        self.neutral_indicators = {
-            'adequate', 'adequately', 'average', 'basic', 'decent', 'fair', 'moderate', 
-            'normal', 'ordinary', 'reasonable', 'standard', 'typical', 'usual',
-            'performs adequately', 'works fine', 'meets expectations', 'as expected',
-            'suitable for', 'acceptable', 'sufficient', 'satisfactory'
-        }
-        
-        # Common domain-specific positive/negative indicators
-        self.domain_indicators = {
-            'technology': {
-                'positive': {'innovative', 'efficient', 'powerful', 'impressive', 'reliable'},
-                'negative': {'slow', 'buggy', 'expensive', 'disappointing', 'unreliable'},
-                'neutral_markers': {'average', 'standard', 'typical', 'expected'}
-            },
-            'software': {
-                'positive': {'user-friendly', 'intuitive', 'fast', 'robust', 'feature-rich', 'versatile', 'stable', 'secure', 'efficient', 'scalable'},
-                'negative': {'crashes', 'unresponsive', 'complicated', 'glitchy', 'slow', 'insecure', 'outdated', 'buggy', 'limited', 'inefficient'},
-                'neutral_markers': {'adequate', 'functional', 'standard', 'acceptable', 'usable'}
-            },
-            'hotel': {
-                'positive': {'luxurious', 'comfortable', 'clean', 'spacious', 'friendly staff', 'great service', 'convenient location', 'cozy', 'elegant', 'amenities'},
-                'negative': {'dirty', 'noisy', 'uncomfortable', 'rude staff', 'poor service', 'overpriced', 'crowded', 'small rooms', 'inconvenient', 'unhygienic'},
-                'neutral_markers': {'average', 'basic', 'standard', 'decent', 'adequate'}
-            },
-            'travel': {
-                'positive': {'adventurous', 'exciting', 'breathtaking', 'relaxing', 'memorable', 'spectacular', 'unforgettable', 'scenic', 'enjoyable', 'fascinating'},
-                'negative': {'boring', 'tiring', 'stressful', 'disappointing', 'dangerous', 'overrated', 'expensive', 'crowded', 'dull', 'tedious'},
-                'neutral_markers': {'ordinary', 'mediocre', 'typical', 'expected', 'standard'}
-            },
-            'education': {
-                'positive': {'informative', 'engaging', 'comprehensive', 'enlightening', 'inspirational', 'effective', 'supportive', 'innovative', 'challenging', 'rewarding'},
-                'negative': {'boring', 'uninformative', 'confusing', 'ineffective', 'unhelpful', 'outdated', 'dull', 'frustrating', 'disorganized', 'stressful'},
-                'neutral_markers': {'average', 'typical', 'standard', 'basic', 'mediocre'}
-            },
-            'ecommerce': {
-                'positive': {'convenient', 'fast shipping', 'great deals', 'user-friendly', 'secure', 'reliable', 'efficient', 'wide selection', 'responsive', 'satisfactory'},
-                'negative': {'delayed', 'poor customer service', 'fraudulent', 'difficult navigation', 'unreliable', 'damaged goods', 'overpriced', 'confusing', 'limited options', 'slow'},
-                'neutral_markers': {'average', 'acceptable', 'standard', 'typical', 'satisfactory'}
-            },
-            'social media': {
-                'positive': {'engaging', 'interactive', 'innovative', 'user-friendly', 'connective', 'fun', 'inspiring', 'entertaining', 'informative'},
-                'negative': {'toxic', 'privacy concerns', 'cyberbullying', 'spam', 'fake news', 'unreliable', 'time-consuming', 'annoying ads', 'glitchy'},
-                'neutral_markers': {'common', 'average', 'typical', 'standard', 'expected'}
-            },
-            'healthcare': {
-                'positive': {'caring', 'professional', 'compassionate', 'knowledgeable', 'efficient', 'reliable', 'thorough', 'state-of-the-art', 'clean', 'responsive'},
-                'negative': {'rude', 'unprofessional', 'inefficient', 'uncaring', 'dirty', 'long wait times', 'expensive', 'misdiagnosis', 'negligent', 'incompetent'},
-                'neutral_markers': {'standard', 'average', 'typical', 'adequate', 'sufficient'}
-            }
-        }
-        
-
-    def _preprocess_text(self, text: str) -> str:
-        """Basic text preprocessing"""
-        text = text.lower()
-        text = re.sub(r'\s+', ' ', text)
-        return text.strip()
-
-    def _check_domain_indicators(self, text: str, domain: str) -> Dict:
-        """Check for domain-specific sentiment indicators"""
-        if domain not in self.domain_indicators:
-            return {'has_indicators': False, 'confidence_modifier': 0}
-            
-        text = self._preprocess_text(text)
-        indicators = self.domain_indicators[domain]
-        
-        pos_count = sum(1 for word in indicators['positive'] if word in text)
-        neg_count = sum(1 for word in indicators['negative'] if word in text)
-        neutral_count = sum(1 for word in indicators['neutral_markers'] if word in text)
-        
-        # Increase confidence if strong domain indicators are present
-        confidence_modifier = 0.05 * (pos_count + neg_count)
-        
-        return {
-            'has_indicators': bool(pos_count + neg_count + neutral_count),
-            'confidence_modifier': confidence_modifier
-        }
-
-    def validate_sentiment(self, text: str, labeled_sentiment: str, domain: str = None) -> Dict:
-        """
-        Validate if the labeled sentiment matches detected sentiment,
-        flagging only high-confidence mismatches
-        """
-        text_lower = text.lower()
-        
-        # Check for neutral indicators first
-        has_neutral_indicator = any(indicator in text_lower for indicator in self.neutral_indicators)
-        
-        # Check for contrast markers
-        has_contrast = any(marker in text_lower for marker in self.contrast_markers)
-        
-        # If text has neutral indicators or contrast markers, trust the neutral label
-        if (has_neutral_indicator or has_contrast) and labeled_sentiment == 'neutral':
-            return {
-                'is_mismatch': False,
-                'confidence': 0.0,
-                'predicted': 'neutral',
-                'labeled': labeled_sentiment,
-                'has_contrast': has_contrast,
-                'has_neutral': has_neutral_indicator
-            }
-
-        # Get domain-specific indicators
-        domain_check = self._check_domain_indicators(text, domain) if domain else {
-            'has_indicators': False, 
-            'confidence_modifier': 0
-        }
-
-        # Get model prediction
-        inputs = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
-        with torch.no_grad():
-            outputs = self.model(**inputs)
-            probs = torch.nn.functional.softmax(outputs.logits, dim=1)
-            confidence, predicted = torch.max(probs, dim=1)
-            confidence = confidence.item()
-
-        # Adjust confidence based on various factors
-        if has_contrast or has_neutral_indicator:
-            confidence *= 0.8  # Reduce confidence
-        
-        confidence += domain_check['confidence_modifier']
-        
-        # Map model output to sentiment labels
-        predicted_sentiment = 'positive' if predicted.item() == 1 else 'negative'
-        
-        # Handle neutral cases more aggressively
-        if has_neutral_indicator or has_contrast or (confidence < 0.8):
-            predicted_sentiment = 'neutral'
-
-        # Flag only high-confidence mismatches, being more lenient with neutral labels
-        is_mismatch = (
-            predicted_sentiment != labeled_sentiment and 
-            confidence > self.confidence_threshold and
-            not (labeled_sentiment == 'neutral' and (has_neutral_indicator or has_contrast))
-        )
-
-        return {
-            'is_mismatch': is_mismatch,
-            'confidence': confidence,
-            'predicted': predicted_sentiment,
-            'labeled': labeled_sentiment,
-            'has_contrast': has_contrast,
-            'has_neutral': has_neutral_indicator
-        }
-
-
-class SophisticatedSimilarityAnalyzer:
-    """
-    Hybrid similarity detection system combining semantic and lexical features:
-    - Semantic: Uses sentence transformers for meaning-based similarity (70% weight)
-    - Lexical: Uses n-gram overlap for surface-level similarity (30% weight)
-    - Thresholds: 0.85 for semantic, 0.7 for n-gram similarity
-    
-    This dual approach helps catch both meaning-based and text-based similarities
-    while reducing false positives through weighted combination.
-    """
-    def __init__(self):
-        self.model = SentenceTransformer('all-MiniLM-L6-v2')
-        self.semantic_threshold = 0.85
-        self.ngram_threshold = 0.7
-        
-    def _get_embeddings(self, texts):
-        return self.model.encode(texts, show_progress_bar=False)
-    
-    def _get_ngram_similarity(self, text1, text2, n=3):
-        def get_ngrams(text, n):
-            tokens = nltk.word_tokenize(text.lower())
-            return set(nltk.ngrams(tokens, n))
-        
-        ngrams1 = get_ngrams(text1.lower(), n)
-        ngrams2 = get_ngrams(text2.lower(), n)
-        
-        if not ngrams1 or not ngrams2:
-            return 0.0
-            
-        intersection = len(ngrams1.intersection(ngrams2))
-        union = len(ngrams1.union(ngrams2))
-        return intersection / union if union > 0 else 0.0
-    
-    def analyze_similarity(self, texts):
-        """
-        Core similarity analysis workflow:
-        1. Generate semantic embeddings for all texts
-        2. Calculate pairwise similarities using cosine similarity
-        3. For high semantic matches, verify with n-gram overlap
-        4. Combine scores with 70-30 weighting
-        5. Categorize pairs into high/moderate similarity buckets
-        """
-        embeddings = self._get_embeddings(texts)
-        semantic_sim_matrix = cosine_similarity(embeddings)
-        
-        similar_pairs = defaultdict(list)
-        
-        for i in range(len(texts)):
-            for j in range(i+1, len(texts)):
-                semantic_sim = semantic_sim_matrix[i][j]
-                ngram_sim = self._get_ngram_similarity(texts[i], texts[j])
-                
-                combined_sim = (semantic_sim * 0.7 + ngram_sim * 0.3)
-                
-                if combined_sim > self.semantic_threshold:
-                    similar_pairs['high_similarity'].append({
-                        'pair': (i, j),
-                        'semantic_similarity': float(semantic_sim),
-                        'ngram_similarity': ngram_sim,
-                        'combined_similarity': combined_sim,
-                        'texts': (texts[i], texts[j])
-                    })
-                elif combined_sim > self.ngram_threshold:
-                    similar_pairs['moderate_similarity'].append({
-                        'pair': (i, j),
-                        'semantic_similarity': float(semantic_sim),
-                        'ngram_similarity': ngram_sim,
-                        'combined_similarity': combined_sim,
-                        'texts': (texts[i], texts[j])
-                    })
-        
-        return {
-            'similarity_matrix': semantic_sim_matrix,
-            'similar_pairs': dict(similar_pairs),
-            'average_similarity': float(np.mean(semantic_sim_matrix)),
-            'max_similarity': float(np.max(semantic_sim_matrix - np.eye(len(texts))))
-        }
-
-class SophisticatedTopicAnalyzer:
-    """
-    Dynamic topic modeling with automatic optimization:
-    1. Determines optimal number of topics using coherence scores
-    2. Processes n-grams for better phrase capture
-    3. Implements hierarchical topic structure
-    4. Handles topic evolution and stability
-    """
-    def __init__(self, min_topics=2, max_topics=10):
-        self.nlp = spacy.load('en_core_web_sm')
-        self.min_topics = min_topics
-        self.max_topics = max_topics
-        self.optimal_model = None
-        self.dictionary = None
-        self.corpus = None
-        
-    def preprocess_text(self, texts):
-        cleaned_texts = [re.sub(r'[^\w\s]', '', text.lower()) for text in texts]
-        
-        docs = [[token.lemma_ for token in self.nlp(text) 
-                if not token.is_stop and not token.is_punct and token.is_alpha]
-               for text in cleaned_texts]
-        
-        bigram = Phrases(docs, min_count=5, threshold=100)
-        trigram = Phrases(bigram[docs], threshold=100)
-        
-        bigram_mod = Phraser(bigram)
-        trigram_mod = Phraser(trigram)
-        
-        processed_texts = [trigram_mod[bigram_mod[doc]] for doc in docs]
-        
-        return processed_texts
-    
-    def find_optimal_topics(self, texts, coherence='c_v'):
-        """
-        Identifies ideal topic count by:
-        - Testing topic ranges from min_topics to max_topics
-        - Evaluating coherence scores for each model
-        - Selecting model with highest coherence while avoiding overfitting
-        Returns optimal model and associated metrics
-        """
-        processed_texts = self.preprocess_text(texts)
-        self.dictionary = Dictionary(processed_texts)
-        self.corpus = [self.dictionary.doc2bow(text) for text in processed_texts]
-        
-        coherence_scores = []
-        models = {}
-        
-        for num_topics in range(self.min_topics, self.max_topics + 1):
-            lda_model = LdaModel(
-                corpus=self.corpus,
-                num_topics=num_topics,
-                id2word=self.dictionary,
-                random_state=42,
-                iterations=50,
-                passes=10,
-                alpha='auto',
-                eta='auto'
-            )
-            
-            coherence_model = CoherenceModel(
-                model=lda_model,
-                texts=processed_texts,
-                dictionary=self.dictionary,
-                coherence=coherence
-            )
-            
-            coherence_score = coherence_model.get_coherence()
-            coherence_scores.append(coherence_score)
-            models[num_topics] = lda_model
-        
-        optimal_num_topics = self.min_topics + coherence_scores.index(max(coherence_scores))
-        self.optimal_model = models[optimal_num_topics]
-        
-        return {
-            'optimal_num_topics': optimal_num_topics,
-            'coherence_scores': coherence_scores,
-            'optimal_model': self.optimal_model
-        }
-    
-    def analyze_topics(self, texts):
-        if not self.optimal_model:
-            self.find_optimal_topics(texts)
-        
-        doc_topics = [self.optimal_model.get_document_topics(bow) 
-                     for bow in self.corpus]
-        
-        topic_diversity = np.mean([len([t for t, _ in doc]) for doc in doc_topics])
-        
-        topics = {}
-        for idx in range(self.optimal_model.num_topics):
-            topics[f"Topic {idx + 1}"] = [
-                word for word, prob in 
-                self.optimal_model.show_topic(idx, topn=10)
-            ]
-        
-        return {
-            'topics': topics,
-            'topic_diversity': topic_diversity,
-            'topic_coherence': np.mean([score for _, score in 
-                                      self.optimal_model.top_topics(self.corpus)]),
-            'document_topic_distribution': doc_topics
-        }
-
-class SophisticatedLinguisticAnalyzer:
-    def __init__(self):
-        self.nlp = spacy.load('en_core_web_sm')
-        self.language_tool = language_tool_python.LanguageTool('en-US')
-        self.sophistication_threshold = {
-            'basic': 0.3,
-            'intermediate': 0.6,
-            'advanced': 0.8
-        }
-        
-    def analyze_sentence_structure(self, doc):
-        sentences = [sent for sent in doc.sents]
-        
-        lengths = [len(sent) for sent in sentences]
-        types = []
-        for sent in sentences:
-            if any(token.dep_ == 'mark' for token in sent):
-                types.append('complex')
-            elif len([token for token in sent if token.pos_ == 'VERB']) > 1:
-                types.append('compound')
-            else:
-                types.append('simple')
-        
-        return {
-            'avg_length': np.mean(lengths),
-            'sentence_types': Counter(types),
-            'structure_complexity': len([t for t in types if t != 'simple']) / len(types)
-        }
-    
-    def analyze_vocabulary(self, doc):
-        pos_diversity = Counter([token.pos_ for token in doc])
-        lemma_diversity = len(set([token.lemma_ for token in doc]))
-        
-        content_words = [token for token in doc 
-                        if not token.is_stop and token.is_alpha]
-        unique_content_words = set([token.lemma_ for token in content_words])
-        
-        return {
-            'pos_distribution': dict(pos_diversity),
-            'lexical_diversity': lemma_diversity / len(doc),
-            'vocabulary_richness': len(unique_content_words) / len(content_words) 
-                                 if content_words else 0
-        }
-    
-    def analyze_coherence(self, doc):
-        sentences = [sent for sent in doc.sents]
-        
-        pronouns = [token for token in doc if token.pos_ == 'PRON']
-        reference_density = len(pronouns) / len(doc)
-        
-        discourse_markers = [token for token in doc 
-                           if token.dep_ in ['mark', 'cc']]
-        
-        return {
-            'reference_density': reference_density,
-            'discourse_marker_ratio': len(discourse_markers) / len(doc),
-            'sentence_flow': self._calculate_sentence_flow(sentences)
-        }
-    
-    def _calculate_sentence_flow(self, sentences):
-        if len(sentences) < 2:
-            return 1.0
-            
-        flow_scores = []
-        for i in range(len(sentences) - 1):
-            curr_sent = set([token.lemma_ for token in sentences[i] 
-                           if not token.is_stop])
-            next_sent = set([token.lemma_ for token in sentences[i + 1] 
-                           if not token.is_stop])
-            
-            overlap = len(curr_sent.intersection(next_sent))
-            flow_scores.append(overlap / len(curr_sent.union(next_sent)) 
-                             if curr_sent.union(next_sent) else 0)
-            
-        return np.mean(flow_scores)
-    
-    def analyze_quality(self, text):
-        doc = self.nlp(text)
-        
-        grammar_errors = self.language_tool.check(text)
-        
-        readability = {
-            'flesch_score': flesch_reading_ease(text),
-            'dale_chall_score': dale_chall_readability_score(text)
-        }
-        
-        structure = self.analyze_sentence_structure(doc)
-        
-        vocabulary = self.analyze_vocabulary(doc)
-        
-        coherence = self.analyze_coherence(doc)
-        
-        sophistication_score = (
-            vocabulary['lexical_diversity'] * 0.3 +
-            structure['structure_complexity'] * 0.3 +
-            coherence['sentence_flow'] * 0.2 +
-            (1 - len(grammar_errors) / len(doc)) * 0.2
-        )
-        
-        sophistication_level = (
-            'advanced' if sophistication_score > self.sophistication_threshold['advanced']
-            else 'intermediate' if sophistication_score > self.sophistication_threshold['intermediate']
-            else 'basic'
-        )
-        
-        return {
-            'readability': readability,
-            'grammar_errors': len(grammar_errors),
-            'structure_analysis': structure,
-            'vocabulary_analysis': vocabulary,
-            'coherence_analysis': coherence,
-            'sophistication': {
-                'score': sophistication_score,
-                'level': sophistication_level
-            }
-        }
+    return results
 
 def analyze_reviews_comprehensively(data):
     """
-    Master analysis function combining:
-    - Topic modeling (using SophisticatedTopicAnalyzer)
-    - Linguistic quality assessment (using SophisticatedLinguisticAnalyzer)
-    
-    Note: Sentiment validation and similarity detection are handled separately by 
-    validate_sentiments() and calculate_similarity() respectively.
-    
-    Provides holistic view of review content quality and linguistic characteristics.
+    Master analysis function combining topic modeling and linguistic quality assessment
     """
-    topic_analyzer = SophisticatedTopicAnalyzer()
+  
+    topic_analyzer = SophisticatedTopicAnalyzer(min_topics=2, max_topics=10)
     linguistic_analyzer = SophisticatedLinguisticAnalyzer()
     
     texts = [entry['text'] for entry in data]
+    
     
     topic_analysis = topic_analyzer.analyze_topics(texts)
     
@@ -817,15 +381,28 @@ def analyze_reviews_comprehensively(data):
     }
 
 def main():
-    files = [f for f in os.listdir(GENERATED_DATA_FOLDER) if f.endswith('.json')]
-    for file in files:
-        file_path = os.path.join(GENERATED_DATA_FOLDER, file)
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
+    
+    data_folder = Path(GENERATED_DATA_FOLDER)
+    report_folder = Path(REPORT_FOLDER)
+    
+    for file_path in data_folder.glob('*.json'):
         try:
-            print(f"Processing file: {file}")
-            process_file(file_path)
+            results = process_file(file_path)
+            report_path = report_folder / f"{file_path.stem}_report.pdf"
+            generate_pdf_report(
+    file_name=str(report_path),
+    report=results,
+    duplicates=results['duplicates'],
+    sentiment_mismatches=results['sentiment_mismatches'],
+    similarity_pairs=results['similarity']
+)
         except Exception as e:
-            print(f"Error processing file {file}: {e}")
-    print(f"Reports saved in folder: {REPORT_FOLDER}")
+            logging.error(f"Failed to process {file_path}: {str(e)}")
+            continue
 
 if __name__ == "__main__":
     main()
