@@ -27,6 +27,9 @@ import language_tool_python
 from textstat import flesch_reading_ease, dale_chall_readability_score
 from nltk.tokenize import word_tokenize
 from nltk.util import ngrams as nltk_ngrams
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+import torch
+from typing import Dict
 
 nltk.download('stopwords')
 nltk.download('punkt')
@@ -61,23 +64,37 @@ def analyze_quality(data):
     return results
 
 def validate_sentiments(data):
+    """
+    Multi-stage sentiment validation pipeline:
+    1. Applies BERT-based sentiment prediction
+    2. Checks domain-specific sentiment indicators
+    3. Detects contrast markers suggesting neutral sentiment
+    4. Applies confidence thresholding
+    
+    Only returns mismatches with high confidence (>0.92) to minimize false positives.
+    """
+    validator = SentimentValidator()
     mismatches = []
+    
     for entry in data:
-        text = entry['text']
-        sentiment = TextBlob(text).sentiment.polarity
-        predicted = entry['sentiment']
-        derived_sentiment = (
-            'positive' if sentiment > 0.1 else 
-            'negative' if sentiment < -0.1 else 
-            'neutral'
+        # Determine domain from entry if available
+        domain = entry.get('domain', None)
+        
+        result = validator.validate_sentiment(
+            text=entry['text'],
+            labeled_sentiment=entry['sentiment'],
+            domain=domain
         )
-        if derived_sentiment != predicted:
+        
+        if result['is_mismatch']:
             mismatches.append({
-                "id": entry['id'],
-                "text": text,
-                "expected": predicted,
-                "actual": derived_sentiment
+                'id': entry['id'],
+                'text': entry['text'],
+                'expected': entry['sentiment'],
+                'actual': result['predicted'],
+                'confidence': result['confidence']
             })
+    
     return mismatches
 
 def sanitize_text(text):
@@ -85,15 +102,15 @@ def sanitize_text(text):
 
 def generate_pdf_report(file_name, report, duplicates, sentiment_mismatches):
     """
-    Generates structured PDF report with:
-    - Basic statistics
-    - Similarity analysis
-    - Linguistic metrics
-    - Topic distribution
-    - Sentiment analysis
-    - Detailed examples of duplicates and mismatches
+    Structured PDF report generation with error handling:
+    1. Basic statistics (review counts, duplicates)
+    2. Similarity analysis (average, high-similarity pairs)
+    3. Linguistic metrics (quality scores, n-gram diversity)
+    4. Topic analysis (diversity, coherence)
+    5. Sentiment analysis (mismatches, confidence)
+    6. Detailed examples of issues found
     
-    Handles Unicode normalization and proper PDF formatting
+    Handles Unicode normalization and proper PDF formatting for all text content.
     """
     print("\nInside PDF generation:")
     print(f"Number of sentiment mismatches received: {len(sentiment_mismatches)}")
@@ -198,12 +215,12 @@ def process_file(file_path):
         "high_similarity_pairs": len(high_similarity),
         "average_linguistic_quality": float(np.mean([q['flesch_score'] for q in quality_scores if 'flesch_score' in q and q['flesch_score'] is not None])),
         "sentiment_mismatches": len(sentiment_mismatches),
+        "sentiment_confidence": float(np.mean([m.get("confidence", 1.0) for m in sentiment_mismatches])) if sentiment_mismatches else 1.0
     }
 
     try:
         topic_analysis = analyze_topic_coherence(data)
         ngram_diversity = analyze_ngram_diversity(data)
-        enhanced_sentiments = enhanced_sentiment_validation(data)
         
         report.update({
             "topic_diversity": float(topic_analysis.get("topic_diversity", 0.0)),
@@ -211,7 +228,6 @@ def process_file(file_path):
             "unigram_diversity": float(ngram_diversity.get("1-gram_diversity", 0.0)),
             "bigram_diversity": float(ngram_diversity.get("2-gram_diversity", 0.0)),
             "trigram_diversity": float(ngram_diversity.get("3-gram_diversity", 0.0)),
-            "sentiment_confidence": float(np.mean([m.get("confidence", 1.0) for m in enhanced_sentiments])) if enhanced_sentiments else 1.0
         })
     except Exception as e:
         print(f"Warning: Error in additional analyses: {str(e)}")
@@ -221,13 +237,22 @@ def process_file(file_path):
             "unigram_diversity": 0.0,
             "bigram_diversity": 0.0,
             "trigram_diversity": 0.0,
-            "sentiment_confidence": 1.0
         })
     
     file_name = os.path.basename(file_path)
-    generate_pdf_report(file_name, report, duplicates, enhanced_sentiments)
+    generate_pdf_report(file_name, report, duplicates, sentiment_mismatches)
 
 def analyze_topic_coherence(data, n_topics=5):
+    """
+    Topic modeling with coherence optimization:
+    1. Vectorizes text using frequency-based features
+    2. Applies LDA to discover latent topics
+    3. Evaluates topic diversity and coherence
+    4. Returns topic distribution and quality metrics
+    
+    Note: Uses CountVectorizer instead of TF-IDF to preserve absolute frequency information
+    which is important for LDA's probabilistic model.
+    """
     texts = [entry['text'] for entry in data]
     
     vectorizer = CountVectorizer(max_features=1000, stop_words='english')
@@ -251,6 +276,15 @@ def analyze_topic_coherence(data, n_topics=5):
     }
 
 def analyze_ngram_diversity(data, n_range=(1, 3)):
+    """
+    N-gram diversity analysis for detecting text uniqueness:
+    - Processes unigrams through trigrams
+    - Calculates unique n-gram ratio
+    - Handles edge cases (empty/invalid text)
+    - Returns normalized diversity scores
+    
+    Higher scores indicate more diverse vocabulary and sentence structure.
+    """
     texts = [entry['text'] for entry in data]
     
     diversity_metrics = {}
@@ -282,94 +316,145 @@ def analyze_ngram_diversity(data, n_range=(1, 3)):
     
     return diversity_metrics
 
-class SophisticatedSentimentAnalyzer:
+class SentimentValidator:
     """
-    Advanced sentiment analysis using ensemble approach combining VADER, TextBlob, and custom pattern matching.
-    Weights different sentiment signals and adjusts confidence thresholds dynamically based on agreement between methods.
+    Advanced sentiment validation system that combines:
+    - BERT-based sentiment predictions
+    - Domain-specific sentiment indicators
+    - Contrast marker detection
+    - Confidence thresholding
+    
+    Designed to minimize false positives by only flagging high-confidence mismatches
+    while accounting for domain context and linguistic nuances.
     """
     def __init__(self):
-        self.vader = SentimentIntensityAnalyzer()
-        self.nlp = spacy.load('en_core_web_sm')
+        # Load a lightweight BERT model fine-tuned for sentiment
+        model_name = "distilbert-base-uncased-finetuned-sst-2-english"
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
         
-        self.intensifiers = set(['very', 'really', 'extremely', 'absolutely'])
-        self.negators = set(['not', "n't", 'never', 'no'])
-        self.positive_phrases = set([
-            'game changer', 'excellent', 'outstanding', 'impressive',
-            'love it', 'amazing', 'fantastic', 'recommend'
-        ])
-        self.negative_phrases = set([
-            'waste of', 'terrible', 'horrible', 'awful', 'disappointing',
-            'useless', 'poor', 'wouldn\'t recommend'
-        ])
+        # High confidence threshold for flagging mismatches
+        self.confidence_threshold = 0.92
+        
+        # Common domain-specific positive/negative indicators
+        self.domain_indicators = {
+            'technology': {
+                'positive': {'innovative', 'efficient', 'powerful', 'impressive', 'reliable'},
+                'negative': {'slow', 'buggy', 'expensive', 'disappointing', 'unreliable'},
+                'neutral_markers': {'average', 'standard', 'typical', 'expected'}
+            },
+            'software': {
+                'positive': {'user-friendly', 'intuitive', 'fast', 'robust', 'feature-rich', 'versatile', 'stable', 'secure', 'efficient', 'scalable'},
+                'negative': {'crashes', 'unresponsive', 'complicated', 'glitchy', 'slow', 'insecure', 'outdated', 'buggy', 'limited', 'inefficient'},
+                'neutral_markers': {'adequate', 'functional', 'standard', 'acceptable', 'usable'}
+            },
+            'hotel': {
+                'positive': {'luxurious', 'comfortable', 'clean', 'spacious', 'friendly staff', 'great service', 'convenient location', 'cozy', 'elegant', 'amenities'},
+                'negative': {'dirty', 'noisy', 'uncomfortable', 'rude staff', 'poor service', 'overpriced', 'crowded', 'small rooms', 'inconvenient', 'unhygienic'},
+                'neutral_markers': {'average', 'basic', 'standard', 'decent', 'adequate'}
+            },
+            'travel': {
+                'positive': {'adventurous', 'exciting', 'breathtaking', 'relaxing', 'memorable', 'spectacular', 'unforgettable', 'scenic', 'enjoyable', 'fascinating'},
+                'negative': {'boring', 'tiring', 'stressful', 'disappointing', 'dangerous', 'overrated', 'expensive', 'crowded', 'dull', 'tedious'},
+                'neutral_markers': {'ordinary', 'mediocre', 'typical', 'expected', 'standard'}
+            },
+            'education': {
+                'positive': {'informative', 'engaging', 'comprehensive', 'enlightening', 'inspirational', 'effective', 'supportive', 'innovative', 'challenging', 'rewarding'},
+                'negative': {'boring', 'uninformative', 'confusing', 'ineffective', 'unhelpful', 'outdated', 'dull', 'frustrating', 'disorganized', 'stressful'},
+                'neutral_markers': {'average', 'typical', 'standard', 'basic', 'mediocre'}
+            },
+            'ecommerce': {
+                'positive': {'convenient', 'fast shipping', 'great deals', 'user-friendly', 'secure', 'reliable', 'efficient', 'wide selection', 'responsive', 'satisfactory'},
+                'negative': {'delayed', 'poor customer service', 'fraudulent', 'difficult navigation', 'unreliable', 'damaged goods', 'overpriced', 'confusing', 'limited options', 'slow'},
+                'neutral_markers': {'average', 'acceptable', 'standard', 'typical', 'satisfactory'}
+            },
+            'social media': {
+                'positive': {'engaging', 'interactive', 'innovative', 'user-friendly', 'connective', 'fun', 'inspiring', 'entertaining', 'informative'},
+                'negative': {'toxic', 'privacy concerns', 'cyberbullying', 'spam', 'fake news', 'unreliable', 'time-consuming', 'annoying ads', 'glitchy'},
+                'neutral_markers': {'common', 'average', 'typical', 'standard', 'expected'}
+            },
+            'healthcare': {
+                'positive': {'caring', 'professional', 'compassionate', 'knowledgeable', 'efficient', 'reliable', 'thorough', 'state-of-the-art', 'clean', 'responsive'},
+                'negative': {'rude', 'unprofessional', 'inefficient', 'uncaring', 'dirty', 'long wait times', 'expensive', 'misdiagnosis', 'negligent', 'incompetent'},
+                'neutral_markers': {'standard', 'average', 'typical', 'adequate', 'sufficient'}
+            }
+        }
+        
+        # Common contrast markers that often indicate neutral sentiment
+        self.contrast_markers = {'but', 'however', 'although', 'though', 'while', 'yet'}
 
-    def _check_patterns(self, text):
-        """
-        Custom pattern matching that considers:
-        - Contextual intensifiers (very, really, etc.)
-        - Negation handling
-        - Multi-word sentiment phrases
-        - Proximity-based sentiment modification
-        Returns weighted sentiment score based on pattern matches
-        """
-        text_lower = text.lower()
-        
-        pos_matches = sum(1 for phrase in self.positive_phrases if phrase in text_lower)
-        neg_matches = sum(1 for phrase in self.negative_phrases if phrase in text_lower)
-        
-        doc = self.nlp(text)
-        intensified_sentiment = 0
-        
-        for i, token in enumerate(doc):
-            if token.text.lower() in self.intensifiers:
-                next_words = ' '.join([t.text.lower() for t in doc[i:i+3]])
-                if any(phrase in next_words for phrase in self.positive_phrases):
-                    intensified_sentiment += 1.5
-                elif any(phrase in next_words for phrase in self.negative_phrases):
-                    intensified_sentiment -= 1.5
-        
-        return pos_matches - neg_matches + intensified_sentiment
+    def _preprocess_text(self, text: str) -> str:
+        """Basic text preprocessing"""
+        text = text.lower()
+        text = re.sub(r'\s+', ' ', text)
+        return text.strip()
 
-    def analyze(self, text):
-        vader_scores = self.vader.polarity_scores(text)
-        
-        blob = TextBlob(text)
-        blob_sentiment = blob.sentiment
-        
-        pattern_score = self._check_patterns(text)
-        
-        compound_score = (
-            vader_scores['compound'] * 0.5 +
-            blob_sentiment.polarity * 0.3 +
-            (pattern_score / 5.0) * 0.2
-        )
-        
-        scores = [
-            vader_scores['compound'],
-            blob_sentiment.polarity,
-            pattern_score / 5.0
-        ]
-        confidence = 1 - np.std(scores)
-        
-        if confidence > 0.8:
-            thresholds = (0.1, -0.1)
-        else:
-            thresholds = (0.05, -0.05)
+    def _check_domain_indicators(self, text: str, domain: str) -> Dict:
+        """Check for domain-specific sentiment indicators"""
+        if domain not in self.domain_indicators:
+            return {'has_indicators': False, 'confidence_modifier': 0}
             
-        sentiment = (
-            'positive' if compound_score > thresholds[0] else
-            'negative' if compound_score < thresholds[1] else
-            'neutral'
-        )
+        text = self._preprocess_text(text)
+        indicators = self.domain_indicators[domain]
+        
+        pos_count = sum(1 for word in indicators['positive'] if word in text)
+        neg_count = sum(1 for word in indicators['negative'] if word in text)
+        neutral_count = sum(1 for word in indicators['neutral_markers'] if word in text)
+        
+        # Increase confidence if strong domain indicators are present
+        confidence_modifier = 0.05 * (pos_count + neg_count)
         
         return {
-            'sentiment': sentiment,
+            'has_indicators': bool(pos_count + neg_count + neutral_count),
+            'confidence_modifier': confidence_modifier
+        }
+
+    def validate_sentiment(self, text: str, labeled_sentiment: str, domain: str = None) -> Dict:
+        """
+        Validate if the labeled sentiment matches detected sentiment,
+        flagging only high-confidence mismatches
+        """
+        # Check for contrast markers that suggest neutral sentiment
+        has_contrast = any(marker in text.lower() for marker in self.contrast_markers)
+        
+        # Get domain-specific indicators
+        domain_check = self._check_domain_indicators(text, domain) if domain else {
+            'has_indicators': False, 
+            'confidence_modifier': 0
+        }
+
+        # Get model prediction
+        inputs = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            probs = torch.nn.functional.softmax(outputs.logits, dim=1)
+            confidence, predicted = torch.max(probs, dim=1)
+            confidence = confidence.item()
+
+        # Adjust confidence based on various factors
+        if has_contrast:
+            confidence *= 0.8  # Reduce confidence if contrasting statements present
+        
+        confidence += domain_check['confidence_modifier']
+        
+        # Map model output to sentiment labels
+        predicted_sentiment = 'positive' if predicted.item() == 1 else 'negative'
+        
+        # Handle neutral cases
+        if has_contrast or (confidence < 0.7):
+            predicted_sentiment = 'neutral'
+
+        # Flag only high-confidence mismatches
+        is_mismatch = (predicted_sentiment != labeled_sentiment and 
+                      confidence > self.confidence_threshold)
+
+        return {
+            'is_mismatch': is_mismatch,
             'confidence': confidence,
-            'compound_score': compound_score,
-            'component_scores': {
-                'vader': vader_scores,
-                'textblob': blob_sentiment._asdict(),
-                'pattern': pattern_score
-            }
+            'predicted': predicted_sentiment,
+            'labeled': labeled_sentiment,
+            'has_contrast': has_contrast,
+            'domain_indicators': domain_check['has_indicators']
         }
 
 def enhanced_sentiment_validation(data):
@@ -393,9 +478,13 @@ def enhanced_sentiment_validation(data):
 
 class SophisticatedSimilarityAnalyzer:
     """
-    Hybrid similarity analysis combining semantic embeddings with n-gram overlap.
-    Uses sentence transformers for semantic understanding and n-grams for surface-level similarity.
-    Weights: 70% semantic similarity, 30% n-gram similarity
+    Hybrid similarity detection system combining semantic and lexical features:
+    - Semantic: Uses sentence transformers for meaning-based similarity (70% weight)
+    - Lexical: Uses n-gram overlap for surface-level similarity (30% weight)
+    - Thresholds: 0.85 for semantic, 0.7 for n-gram similarity
+    
+    This dual approach helps catch both meaning-based and text-based similarities
+    while reducing false positives through weighted combination.
     """
     def __init__(self):
         self.model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -421,6 +510,14 @@ class SophisticatedSimilarityAnalyzer:
         return intersection / union if union > 0 else 0.0
     
     def analyze_similarity(self, texts):
+        """
+        Core similarity analysis workflow:
+        1. Generate semantic embeddings for all texts
+        2. Calculate pairwise similarities using cosine similarity
+        3. For high semantic matches, verify with n-gram overlap
+        4. Combine scores with 70-30 weighting
+        5. Categorize pairs into high/moderate similarity buckets
+        """
         embeddings = self._get_embeddings(texts)
         semantic_sim_matrix = cosine_similarity(embeddings)
         
