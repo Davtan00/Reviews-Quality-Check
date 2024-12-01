@@ -33,6 +33,25 @@ class SentimentValidator:
             'suitable for', 'acceptable', 'sufficient', 'satisfactory'
         }
         
+        # Expand neutral indicators with more nuanced patterns
+        self.neutral_indicators.update({
+            'mixed feelings', 'balanced', 'middle ground', 'somewhat', 
+            'relatively', 'fairly', 'neither', 'nor', 'compared to',
+            'while', 'although', 'however', 'on one hand', 'on the other hand',
+            'pros and cons', 'trade-off', 'trade off', 'compromise',
+            'limited compared', 'basic but', 'simple but', 'decent but',
+            'good enough', 'not great but', 'not bad but'
+        })
+        
+        # Add neutral sentiment patterns
+        self.neutral_patterns = {
+            'performance_comparison': r'(?i)(compared|relative|versus|vs).*(?:newer|other|previous|similar)',
+            'balanced_opinion': r'(?i)(while|although|however).*but',
+            'moderate_intensity': r'(?i)(somewhat|fairly|relatively|quite|rather)\s\w+',
+            'explicit_neutral': r'(?i)(neutral|mixed|balanced|middle ground|average|moderate)',
+            'pros_cons': r'(?i)(pros.*cons|advantages.*disadvantages|benefits.*drawbacks)',
+        }
+        
         # Common domain-specific positive/negative indicators(gpt , no clue if these are actually good enough????)
         self.domain_indicators = {
             'technology': {
@@ -101,12 +120,29 @@ class SentimentValidator:
             return 'neutral'
         return None
     
-    def validate_sentiment(self, text: str, labeled_sentiment: str, domain: str = None):
-        """
-        Validate if the labeled sentiment matches detected sentiment,
-        flagging only high-confidence mismatches
-        """
+    def _detect_neutral_patterns(self, text: str) -> bool:
+        """Check for linguistic patterns indicating neutral sentiment"""
+        import re
         
+        text = text.lower()
+        
+        # Check for balanced statements with positive and negative aspects
+        has_positive = any(word in text for word in self.domain_indicators.get('general', {}).get('positive', set()))
+        has_negative = any(word in text for word in self.domain_indicators.get('general', {}).get('negative', set()))
+        has_contrast = any(marker in text for marker in self.contrast_markers)
+        
+        if has_positive and has_negative and has_contrast:
+            return True
+            
+        # Check for neutral patterns
+        for pattern in self.neutral_patterns.values():
+            if re.search(pattern, text):
+                return True
+                
+        return False
+    
+    def validate_sentiment(self, text: str, labeled_sentiment: str, domain: str = None):
+        """Enhanced sentiment validation with better neutral detection"""
         domain_sentiment = self._check_domain_indicators(text, domain)
         
         # Get BERT model prediction
@@ -116,28 +152,36 @@ class SentimentValidator:
         predicted_class = outputs.logits.argmax().item()
         confidence = probs[0][predicted_class].item()
         
-        # Map BERT output (0: negative, 1: positive) to sentiment labels
-        predicted_sentiment = "positive" if predicted_class == 1 else "negative"
-        
-        # Check for contrast markers that might indicate neutral sentiment
-        has_contrast = any(marker in text.lower() for marker in self.contrast_markers)
-        
         # Check for neutral indicators
-        has_neutral = any(indicator in text.lower() for indicator in self.neutral_indicators)
+        has_neutral_indicators = any(indicator in text.lower() for indicator in self.neutral_indicators)
+        has_neutral_patterns = self._detect_neutral_patterns(text)
+        
+        # Determine predicted sentiment with neutral consideration
+        if has_neutral_indicators or has_neutral_patterns:
+            predicted_sentiment = "neutral"
+            # Adjust confidence for neutral predictions
+            confidence = min(confidence, 0.8)  # Cap confidence for neutral predictions
+        else:
+            predicted_sentiment = "positive" if predicted_class == 1 else "negative"
         
         # Determine if there's a mismatch
         is_mismatch = False
-        if confidence >= self.confidence_threshold:
-            if domain_sentiment and domain_sentiment != labeled_sentiment:
-                is_mismatch = True
-            elif predicted_sentiment != labeled_sentiment and not (has_contrast or has_neutral):
-                is_mismatch = True
+        if labeled_sentiment == "neutral":
+            # For neutral labeled sentiments, only flag as mismatch if we're very confident
+            # it's strongly positive or negative
+            is_mismatch = (confidence > self.confidence_threshold and 
+                          not has_neutral_indicators and 
+                          not has_neutral_patterns)
+        else:
+            # For positive/negative labeled sentiments, flag if prediction differs
+            is_mismatch = (predicted_sentiment != labeled_sentiment and 
+                          confidence >= self.confidence_threshold)
         
         return {
             'is_mismatch': is_mismatch,
             'predicted': predicted_sentiment,
             'confidence': confidence,
             'domain_sentiment': domain_sentiment,
-            'has_contrast_markers': has_contrast,
-            'has_neutral_indicators': has_neutral
+            'has_neutral_indicators': has_neutral_indicators,
+            'has_neutral_patterns': has_neutral_patterns
         }

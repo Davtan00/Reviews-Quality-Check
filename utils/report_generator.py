@@ -124,8 +124,8 @@ def format_sentiment_mismatch(mismatch):
     return (
         f"ID: {mismatch['id']}\n"
         f"Text: {mismatch['text']}\n"
-        f"Expected: {mismatch['expected']}\n"
-        f"Actual: {mismatch['actual']}\n"
+        f"Existing Sentiment: {mismatch['expected']}\n"
+        f"Analysed Sentiment: {mismatch['actual']}\n"
         f"Confidence: {mismatch['confidence']:.2f}\n"
         f"{'_' * 80}\n\n"  
     )
