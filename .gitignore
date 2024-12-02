@@ -10,11 +10,12 @@ venv/
 *.pdf
 *.json
 *.csv
-*.txt
+
 *.xlsx
 *.xls
 *.ipynb
 
 # Generated data
 Generated Data/
+Collection Of Reviews/
 /pycache/*

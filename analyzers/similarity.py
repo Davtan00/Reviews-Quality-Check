@@ -57,3 +57,17 @@ class SophisticatedSimilarityAnalyzer:
             'average_similarity': average_similarity,
             'total_pairs_analyzed': pair_count
         }
+    
+    def analyze_token_overlap(self, texts1: List[str], texts2: List[str]) -> Dict[str, int]:
+        """Analyze token overlap between two sets of texts"""
+        tokens1 = set(" ".join(texts1).split())
+        tokens2 = set(" ".join(texts2).split())
+        
+        overlap = tokens1.intersection(tokens2)
+        
+        return {
+            'overlap_count': len(overlap),
+            'overlap_ratio': len(overlap) / len(tokens1.union(tokens2)),
+            'unique_tokens1': len(tokens1),
+            'unique_tokens2': len(tokens2)
+        }
