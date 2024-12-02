@@ -126,8 +126,40 @@ def parse_arguments():
                        help='List available sentiment analysis models')
     parser.add_argument('-d', '--domain', 
                        type=str,
-                       help='Domain to use for sentiment validation (overrides JSON domain)')
+                       help='Override json specifieddomain for ALL files (use with caution)')
+    parser.add_argument('-f', '--filter-domain',
+                       type=str,
+                       help='Process only files with specified domain')
+    parser.add_argument('--filter-domains',
+                       type=str,
+                       help='Process only files with specified domains (comma-separated)')
     return parser.parse_args()
+
+def get_file_domain(file_path: Path) -> str:
+    """Get domain from JSON file"""
+    try:
+        with open(file_path, 'r') as f:
+            json_data = json.load(f)
+            return json_data.get("domain", "general")
+    except Exception as e:
+        logging.error(f"Error reading domain from {file_path}: {str(e)}")
+        return "general"
+
+def should_process_file(file_path: Path, args) -> bool:
+    """Determine if file should be processed based on domain filters"""
+    if not (args.filter_domain or args.filter_domains):
+        return True
+        
+    file_domain = get_file_domain(file_path)
+    
+    if args.filter_domain:
+        return file_domain == args.filter_domain
+        
+    if args.filter_domains:
+        allowed_domains = {d.strip() for d in args.filter_domains.split(',')}
+        return file_domain in allowed_domains
+        
+    return True
 
 @contextmanager
 def managed_analyzers(model_key: str = 'distilbert-sst2'):
@@ -416,36 +448,62 @@ def main():
     # Initialize NLTK resources
     initialize_nltk()
     
-    # Process files with specified model
+    # Domain override warning
+    if args.domain:
+        logging.warning(
+            f"\nDOMAIN OVERRIDE WARNING:\n"
+            f"Domain override '{args.domain}' will be applied to ALL processed files.\n"
+            f"This will ignore the original domains in the files."
+        )
+        user_input = input("Do you want to continue? (y/n): ").lower()
+        if user_input != 'y':
+            print("Operation aborted.")
+            return
+    
     try:
         input_folder = Path(GENERATED_DATA_FOLDER)
         output_folder = Path(REPORT_FOLDER)
-        
-        # Create output folder if it doesn't exist
         output_folder.mkdir(parents=True, exist_ok=True)
         
-        # Process each JSON file in the input folder
-        for file_path in input_folder.glob('*.json'):
+        # Show domain summary
+        print("\nFile Domain Summary:")
+        json_files = list(input_folder.glob('*.json'))
+        for file_path in json_files:
+            domain = get_file_domain(file_path)
+            will_process = should_process_file(file_path, args)
+            status = "WILL PROCESS" if will_process else "SKIPPED"
+            print(f"  - {file_path.name}: {domain} [{status}]")
+        print()
+        
+        # Process files
+        processed_count = 0
+        for file_path in json_files:
+            if not should_process_file(file_path, args):
+                continue
+                
             try:
-                results = process_file(file_path, args.model)
+                results = process_file(file_path, args.model, args.domain)
                 
                 # Generate report name
                 report_name = f"analysis_report_{file_path.stem}_{args.model}.pdf"
                 report_path = output_folder / report_name
                 
-                # Generate PDF report with all required data
+                # Generate PDF report
                 generate_pdf_report(
-                file_name=str(report_path),
-                report=results,
-                duplicates=results['duplicates'],
-                sentiment_mismatches=results['sentiment_mismatches'],
-                similarity_pairs=results['similarity']
+                    file_name=str(report_path),
+                    report=results,
+                    duplicates=results['duplicates'],
+                    sentiment_mismatches=results['sentiment_mismatches'],
+                    similarity_pairs=results['similarity']
                 )
                 print(f"Report generated: {report_path}")
+                processed_count += 1
                 
             except Exception as e:
                 logging.error(f"Error processing file {file_path}: {str(e)}")
                 continue
+        
+        print(f"\nProcessing complete. {processed_count} file(s) processed.")
                 
     except Exception as e:
         logging.error(f"Error in main execution: {str(e)}")

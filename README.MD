@@ -234,3 +234,18 @@ python review_analysis.py -m cardiffnlp-twitter
 python review_analysis.py -l
 **Specify domain**
 python review_analysis.py -m cardiffnlp-twitter -d technology
+**Process multiple domains with specific model**
+python review_analysis.py -m nlptown-bert --filter-domains software,education
+
+### Command Line Arguments
+- `-m, --model`: Specify sentiment analysis model
+- `-l, --list-models`: List available models
+- `-d, --domain`: Override domain for all processed files
+- `-f, --filter-domain`: Process only files with specified domain
+- `--filter-domains`: Process multiple domains (comma-separated)
+
+### Important Notes
+1. Using `-d` (domain override) will prompt for confirmation as it affects ALL processed files
+2. Domain filtering (`-f` or `--filter-domains`) only processes files with matching domains
+3. Original file domains are preserved unless explicitly overridden with `-d`
+4. Multiple domain filtering supports comma-separated values without spaces
