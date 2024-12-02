@@ -170,7 +170,7 @@ def managed_analyzers(model_key: str = 'distilbert-sst2'):
         # Initialize analyzers with resource management
         sentiment_validator = SentimentValidator(model_key=model_key)
         similarity_analyzer = SophisticatedSimilarityAnalyzer()
-        topic_analyzer = SophisticatedTopicAnalyzer(min_topics=2, max_topics=10, verbose=False)
+        topic_analyzer = SophisticatedTopicAnalyzer(min_topics=2, max_topics=10, verbose=True)
         
         # Register resources for cleanup
         resource_manager.register(sentiment_validator)
@@ -225,7 +225,7 @@ def process_file(file_path: Path, model_key: str, domain_override: str = None) -
             sentiment_mismatches = validate_sentiments_batch(data, domain, model_key)
             
             print("Analyzing topics...")
-            texts = [entry['text'] for entry in data]  # Ensure texts are defined
+            texts = [entry['text'] for entry in data]
             topic_analysis = analyzers['topic'].analyze_topics(texts)
             
             # Calculate n-gram diversity
@@ -241,8 +241,9 @@ def process_file(file_path: Path, model_key: str, domain_override: str = None) -
                 'unigram_diversity': ngram_diversity.get('1-gram_diversity', 0.0),
                 'bigram_diversity': ngram_diversity.get('2-gram_diversity', 0.0),
                 'trigram_diversity': ngram_diversity.get('3-gram_diversity', 0.0),
-                'topic_diversity': topic_analysis.get('topic_diversity', 0.0),
-                'dominant_topic_coherence': topic_analysis.get('topic_coherence', 0.0),
+                'topic_coherence_cv': topic_analysis['coherence_scores']['c_v'],
+                'topic_coherence_umass': topic_analysis['coherence_scores']['u_mass'],
+                'topic_diversity': topic_analysis['topic_diversity'],
                 'sentiment_mismatches': len(sentiment_mismatches),
                 'sentiment_confidence': sum(m['confidence'] for m in sentiment_mismatches) / len(sentiment_mismatches) if sentiment_mismatches else 0.0,
                 'duplicates': duplicates,
@@ -448,7 +449,11 @@ def analyze_reviews_comprehensively(data):
     Master analysis function combining topic modeling and linguistic quality assessment
     """
   
-    topic_analyzer = SophisticatedTopicAnalyzer(min_topics=2, max_topics=10)
+    topic_analyzer = SophisticatedTopicAnalyzer(
+    min_topics=2, 
+    max_topics=10, 
+        verbose=True  
+    )
     linguistic_analyzer = SophisticatedLinguisticAnalyzer()
     
     texts = [entry['text'] for entry in data]

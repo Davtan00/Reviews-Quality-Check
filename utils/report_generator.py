@@ -93,7 +93,8 @@ def generate_pdf_report(
             metrics = [
                 ("Avg Linguistic Quality", f"{report.get('average_linguistic_quality', 0.0):.2f}"),
                 ("Topic Diversity", f"{report.get('topic_diversity', 0.0):.2f}"),
-                ("Topic Coherence", f"{report.get('dominant_topic_coherence', 0.0):.2f}"),
+                ("Topic Coherence (C_v)", f"{report.get('topic_coherence_cv', 0.0):.2f}"),
+                ("Topic Coherence (UMass)", f"{report.get('topic_coherence_umass', 0.0):.2f}"),
                 ("Avg Sentiment Confidence", f"{report.get('sentiment_confidence', 0.0):.2f}")
             ]
             
