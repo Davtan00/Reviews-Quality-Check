@@ -28,28 +28,15 @@ class StatisticalAnalyzer:
         """Analyze n-grams in the given texts and return their frequencies."""
         logging.info(f"Starting ngram analysis with {len(texts)} texts")
         
-        # Log the input texts
-        for idx, text in enumerate(texts):
-            logging.info(f"Text {idx + 1} (length {len(text)}): {text[:100]}...")  # First 100 chars
-            
-        if not texts:
-            logging.error("No texts provided for ngram analysis")
-            raise ValueError("No texts provided for analysis")
-            
         try:
-            # Analyze bigrams
-            logging.info("Analyzing bigrams...")
+            # Process bigrams and trigrams separately for better memory management
             bigram_matrix = self.vectorizer_bigram.fit_transform(texts)
             bigram_freq = bigram_matrix.sum(axis=0).A1
             bigrams = [(word, bigram_freq[idx]) for word, idx in self.vectorizer_bigram.vocabulary_.items()]
-            logging.info(f"Found {len(bigrams)} unique bigrams")
 
-            # Analyze trigrams
-            logging.info("Analyzing trigrams...")
             trigram_matrix = self.vectorizer_trigram.fit_transform(texts)
             trigram_freq = trigram_matrix.sum(axis=0).A1
             trigrams = [(word, trigram_freq[idx]) for word, idx in self.vectorizer_trigram.vocabulary_.items()]
-            logging.info(f"Found {len(trigrams)} unique trigrams")
 
             return {
                 'bigrams': sorted(bigrams, key=lambda x: x[1], reverse=True),
@@ -57,6 +44,7 @@ class StatisticalAnalyzer:
             }
             
         except Exception as e:
+            # Log problematic texts for debugging
             logging.error(f"Error in ngram analysis: {str(e)}")
-            logging.error(f"Text sample causing error: {texts[:2]}")  # Log first two texts
+            logging.error(f"Text sample causing error: {texts[:2]}")
             raise

@@ -200,6 +200,7 @@ def process_file(file_path: Path) -> Dict[str, Any]:
         except Exception as e:
             logging.error(f"Error processing file {file_path}: {str(e)}")
             raise
+        
 # I might make a general version of this that can be used efficiently no matter the hardware and not just Ryzen 7 7800X3D
 def analyze_topic_coherence(data: List[Dict[str, Any]], n_topics: int = 5):
     """
@@ -235,12 +236,11 @@ def analyze_topic_coherence(data: List[Dict[str, Any]], n_topics: int = 5):
     
     logging.info(f"Using {n_cores} cores with chunk size of {chunk_size}")
     
-    # Create dictionary and corpus
     dictionary = Dictionary(processed_texts)
     dictionary.filter_extremes(no_below=5, no_above=0.7)
     corpus = [dictionary.doc2bow(text) for text in processed_texts]
     
-    # Updated parameters with only supported arguments
+
     lda_params = {
         'num_topics': n_topics,
         'passes': 15,
@@ -253,18 +253,16 @@ def analyze_topic_coherence(data: List[Dict[str, Any]], n_topics: int = 5):
     }
     
     try:
-        logging.info("Starting LdaMulticore training with parallel processing...")
+        # Attempt parallel processing first
         lda_model = LdaMulticore(
             corpus=corpus,
             id2word=dictionary,
             **lda_params
         )
-        logging.info("LdaMulticore training completed successfully")
         
     except Exception as e:
         logging.error(f"LdaMulticore error: {str(e)}")
-        logging.warning("Falling back to single-core LdaModel (this will be slower)...")
-        # Remove multicore-specific parameters for fallback
+        # Fallback to single-core processing
         multicore_params = ['workers', 'batch']
         for param in multicore_params:
             lda_params.pop(param, None)
@@ -275,9 +273,7 @@ def analyze_topic_coherence(data: List[Dict[str, Any]], n_topics: int = 5):
             **lda_params
         )
     
-    logging.info("Extracting topics and calculating distributions...")
-    
-    # Extract topics and their terms
+    # Extract topics and calculate coherence
     topics = []
     for topic_id in range(n_topics):
         topic_terms = lda_model.show_topic(topic_id, topn=10)
@@ -287,14 +283,14 @@ def analyze_topic_coherence(data: List[Dict[str, Any]], n_topics: int = 5):
             'coherence': calculate_topic_coherence(topic_terms)
         })
     
-    # Calculate document-topic distributions using parallel processing
+    # Calculate document-topic distributions
     doc_topics = []
     for doc in corpus:
         topic_dist = lda_model.get_document_topics(doc, minimum_probability=0.01)
         doc_topics.append([{'topic_id': topic_id, 'weight': float(weight)} 
                           for topic_id, weight in topic_dist])
     
-    results = {
+    return {
         'topics': topics,
         'doc_topic_distribution': doc_topics,
         'model_perplexity': float(lda_model.log_perplexity(corpus)),
@@ -302,10 +298,6 @@ def analyze_topic_coherence(data: List[Dict[str, Any]], n_topics: int = 5):
         'num_documents': len(corpus),
         'used_multicore': isinstance(lda_model, LdaMulticore)
     }
-    
-    logging.info(f"Topic analysis completed using {'multicore' if results['used_multicore'] else 'single-core'} processing")
-    
-    return results
 
 def calculate_topic_coherence(topic_terms):
     """Helper function to calculate coherence for a single topic"""

@@ -21,6 +21,18 @@ This system provides my attempt at asophisticated analysis of synthetic reviews 
 - Cross-review similarity analysis
 - Threshold-based similarity flagging
 
+### 4. Report Generation
+- Efficient single-page PDF reports with optimized layout
+- Separate JSON storage for detailed sentiment mismatches
+- Visual analytics including:
+  - Word cloud visualization of key terms
+  - N-gram frequency analysis
+  - KL divergence plots for distribution comparison
+- Metrics categorization:
+  - Basic statistics (review counts, duplicates, mismatches)
+  - Quality metrics (linguistic quality, topic diversity)
+  - Text diversity measurements
+
 ## Technical Implementation
 
 ### Sentiment Analysis Architecture
@@ -46,6 +58,23 @@ Our sentiment analyzer combines multiple approaches based on current research:
    - Confidence adjustment based on sentiment type
    - Aligned with research on confidence modeling[^4]
 
+### Report Generation Architecture
+Our reporting system implements several key design principles:
+
+1. **Modular Visualization Generation**
+   - Separate visualization generator for maintainability
+   - Temporary file management for resource efficiency
+   - Dynamic sizing and positioning for optimal layout
+
+2. **Data Separation**
+   - Core metrics in PDF for quick analysis
+   - Detailed sentiment mismatches in companion JSON files
+
+3. **Resource Management**
+   - Context-managed temporary directories
+   - Efficient memory usage for large datasets
+   - Automated cleanup of intermediate files
+
 ## Current Challenges
 
 ### 1. Neutral Sentiment Detection
@@ -60,6 +89,11 @@ Current research shows domain-specific challenges:
 - Context-dependent sentiment shifts
 - Domain-specific neutral indicators
 
+### 3. Report Generation
+- Balancing information density with readability
+- Optimizing visualization sizes for different data volumes
+- Managing large sentiment mismatch datasets efficiently
+
 ## Future Improvements
 
 ### Short-term
@@ -70,6 +104,11 @@ Current research shows domain-specific challenges:
 2. **Domain Expansion**
    - Broader domain-specific lexicons
    - Enhanced domain detection
+
+3. **Enhanced Reporting**
+   - Interactive PDF elements for detailed exploration
+   - Customizable report templates
+   - Additional visualization options
 
 ### Long-term
 1. **Advanced Features**
@@ -92,6 +131,11 @@ Our implementation directly aligns with current research(Without using LLM Model
 3. **Contextual Processing**
    - Context-aware sentiment analysis
    - Enhanced neutral detection through pattern recognition[^5]
+
+4. **Report Generation**
+   - Separation of concerns for improved maintainability
+   - Efficient resource management for large datasets
+   - Research-backed visualization techniques
 
 ## References
 
@@ -132,3 +176,8 @@ Taboada, M., & Brooke, J. (2011). Lexicon-based methods for sentiment analysis. 
 Thelwall, M., Buckley, K., & Paltoglou, G. (2010). Sentiment strength detection in short informal text. Journal of the American Society for Information Science and Technology, 61(12), 2544-2558.
 
 Cambria, E., Schuller, B., Xia, Y., & Havasi, C. (2013). New avenues in opinion mining and sentiment analysis. IEEE Intelligent Systems, 28(2), 15-21.
+
+- Implement interactive PDF elements
+- Add customizable report templates
+- Enhance visualization options based on data volume // Or make a strict version which will only be used in the pipelines to further improve the quality of the synthetic data
+- Optimize memory usage for large datasets

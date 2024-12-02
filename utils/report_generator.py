@@ -22,17 +22,17 @@ def managed_temp_directory():
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 def generate_pdf_report(
-    file_name: str,
-    report: Dict,
-    duplicates: List[Dict],
-    sentiment_mismatches: List[Dict],
-    similarity_pairs: List[Dict]
+    file_name: str,          # Output PDF path
+    report: Dict,            # Analysis results including metrics and statistics
+    duplicates: List[Dict],  # List of identified duplicate reviews
+    sentiment_mismatches: List[Dict],  # Reviews with sentiment analysis discrepancies
+    similarity_pairs: List[Dict]       # Highly similar review pairs
 ) -> None:
     """Generate a structured PDF report with analysis results and visualizations"""
     
     with managed_temp_directory() as temp_dir:
         try:
-            # Save sentiment mismatches to separate JSON
+            # Store sentiment mismatches separately for detailed analysis
             sm_file_path = str(Path(file_name).parent / f"SM_{Path(file_name).stem}.json")
             with open(sm_file_path, 'w', encoding='utf-8') as f:
                 json.dump(sentiment_mismatches, f, indent=2, ensure_ascii=False)

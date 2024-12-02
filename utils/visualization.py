@@ -12,12 +12,12 @@ class VisualizationGenerator:
         self.temp_dir = temp_dir
         
     def generate_sentiment_distribution(self, sentiment_data: Dict[str, int], lengths: List[int]) -> str:
-        """Generate sentiment distribution and length plots"""
+        """Generates side-by-side plots for sentiment distribution and review length analysis"""
         output_path = self.temp_dir / "sentiment_distribution.png"
         
         fig, ax = plt.subplots(1, 2, figsize=(14, 6))
         
-        # Sentiment distribution
+        # Color-coded sentiment bars for intuitive interpretation
         sentiments = list(sentiment_data.keys())
         counts = list(sentiment_data.values())
         ax[0].bar(sentiments, counts, color=['#6cba6b', '#f16a6a', '#d1d1d1'])
@@ -25,7 +25,7 @@ class VisualizationGenerator:
         ax[0].set_xlabel('Sentiment')
         ax[0].set_ylabel('Frequency')
         
-        # Length distribution
+        # KDE plot for better visualization of length distribution patterns
         sns.histplot(lengths, kde=True, label='Reviews', color='#f79c42', 
                     stat='density', ax=ax[1])
         ax[1].set_title('Review Length Distribution')
@@ -56,9 +56,10 @@ class VisualizationGenerator:
     def generate_kl_divergence_plot(self, real_dist: Dict[str, float], 
                                   synthetic_dist: Dict[str, float],
                                   kl_div: float) -> str:
-        """Generate KL divergence comparison plot"""
+        """Visualizes distribution differences between real and synthetic data"""
         output_path = self.temp_dir / "kl_divergence.png"
         
+        # Side-by-side bars for easy comparison
         fig, ax = plt.subplots(figsize=(10, 6))
         x = np.arange(len(real_dist))
         width = 0.35
@@ -95,19 +96,18 @@ class VisualizationGenerator:
         return str(output_path)
     
     def generate_ngram_plot(self, ngram_data: Dict[str, Any]) -> str:
-        """Generate n-gram frequency plots"""
+        """Creates side-by-side frequency plots for top bigrams and trigrams"""
         output_path = self.temp_dir / "ngram_analysis.png"
         
+        # Limit to top 10 for readability
         fig, axes = plt.subplots(1, 2, figsize=(14, 6))
         
-        # Bigrams
         bigrams = ngram_data['bigrams'][:10]
         axes[0].bar(range(len(bigrams)), [b[1] for b in bigrams], color='#9b59b6')
         axes[0].set_xticks(range(len(bigrams)))
         axes[0].set_xticklabels([b[0] for b in bigrams], rotation=45, ha='right')
         axes[0].set_title('Top 10 Bigrams')
         
-        # Trigrams
         trigrams = ngram_data['trigrams'][:10]
         axes[1].bar(range(len(trigrams)), [t[1] for t in trigrams], color='#f39c12')
         axes[1].set_xticks(range(len(trigrams)))
