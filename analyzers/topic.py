@@ -6,6 +6,7 @@ from nltk.tokenize import sent_tokenize
 import numpy as np
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
+from sklearn.model_selection import train_test_split
 
 class SophisticatedTopicAnalyzer:
     """
@@ -54,11 +55,22 @@ class SophisticatedTopicAnalyzer:
     
     def find_optimal_topics(self, texts, coherence='c_v', max_iterations=100):
         """
-        Identifies ideal topic count by:
-        - Testing topic ranges from min_topics to max_topics
-        - Evaluating coherence scores for each model
-        - Selecting model with highest coherence while avoiding overfitting
-        Returns optimal model and associated metrics
+        Identifies ideal topic count using coherence optimization.
+        
+        Implementation based on:
+        - Röder et al. (2015): Exploring the space of topic coherence measures
+        - Mimno et al. (2011): Optimizing semantic coherence in topic models
+        
+        Args:
+            texts: List of preprocessed documents
+            coherence: Coherence measure ('c_v', 'u_mass', or 'c_uci')
+            max_iterations: Maximum LDA iterations
+        
+        Returns:
+            Dict containing:
+            - optimal_topics: Optimal number of topics
+            - coherence_scores: List of coherence scores
+            - optimal_coherence: Best coherence score
         """
         processed_texts = self.preprocess_text(texts)
         
@@ -70,11 +82,14 @@ class SophisticatedTopicAnalyzer:
         coherence_values = []
         models = []
         
+        # Implement held-out likelihood estimation following Wallach et al. (2009)
+        held_out_ratio = 0.2
+        train_corpus, test_corpus = train_test_split(self.corpus, test_size=held_out_ratio)
         
         for num_topics in range(self.min_topics, self.max_topics + 1):
             # Train LDA model
             model = LdaModel(
-                corpus=self.corpus,
+                corpus=train_corpus,
                 num_topics=num_topics,
                 id2word=self.dictionary,
                 iterations=max_iterations,

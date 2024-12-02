@@ -185,7 +185,7 @@ def managed_analyzers(model_key: str = 'distilbert-sst2'):
         resource_manager.cleanup()
 
 def process_file(file_path: Path, model_key: str, domain_override: str = None) -> Dict[str, Any]:
-    """Process a single file with proper resource management"""
+    """Process a single file with comprehensive topic and quality analysis"""
     with managed_analyzers(model_key=model_key) as analyzers:
         try:
             print(f"\nProcessing file: {file_path}")
@@ -224,7 +224,8 @@ def process_file(file_path: Path, model_key: str, domain_override: str = None) -
             sentiment_mismatches = validate_sentiments_batch(data, domain, model_key)
             
             print("Analyzing topics...")
-            topic_analysis = analyze_topic_coherence(data, n_topics=5)
+            texts = [entry['text'] for entry in data]  # Ensure texts are defined
+            topic_analysis = analyzers['topic'].analyze_topics(texts)
             
             # Calculate n-gram diversity
             ngram_diversity = analyze_ngram_diversity(data)
@@ -239,8 +240,8 @@ def process_file(file_path: Path, model_key: str, domain_override: str = None) -
                 'unigram_diversity': ngram_diversity.get('1-gram_diversity', 0.0),
                 'bigram_diversity': ngram_diversity.get('2-gram_diversity', 0.0),
                 'trigram_diversity': ngram_diversity.get('3-gram_diversity', 0.0),
-                'topic_diversity': topic_analysis.get('model_perplexity', 0.0),
-                'dominant_topic_coherence': max((t.get('coherence', 0.0) for t in topic_analysis.get('topics', [])), default=0.0),
+                'topic_diversity': topic_analysis.get('topic_diversity', 0.0),
+                'dominant_topic_coherence': topic_analysis.get('topic_coherence', 0.0),
                 'sentiment_mismatches': len(sentiment_mismatches),
                 'sentiment_confidence': sum(m['confidence'] for m in sentiment_mismatches) / len(sentiment_mismatches) if sentiment_mismatches else 0.0,
                 'duplicates': duplicates,
@@ -265,14 +266,7 @@ def process_file(file_path: Path, model_key: str, domain_override: str = None) -
 # I might make a general version of this that can be used efficiently no matter the hardware and not just Ryzen 7 7800X3D
 def analyze_topic_coherence(data: List[Dict[str, Any]], n_topics: int = 5):
     """
-    Topic modeling optimized for high-performance hardware (Ryzen 7 7800X3D, 32GB DDR5)
-    using LdaMulticore for parallel processing.
-    
-    Hardware optimization:
-    - Uses up to 12 cores (leaving 4 threads for system)
-    - Optimized chunk size for DDR5 memory
-    - Batch processing enabled for better parallelization
-    - Float32 dtype for memory efficiency
+    Topic modeling with adaptive convergence parameters based on corpus size.
     
     Args:
         data: List of dictionaries containing review data
@@ -291,32 +285,89 @@ def analyze_topic_coherence(data: List[Dict[str, Any]], n_topics: int = 5):
         tokens = [token for token in tokens if token not in stop_words]
         processed_texts.append(tokens)
     
-    # Hardware-optimized settings for my Ryzen 7 7800X3D
-    n_cores = min(12, cpu_count() - 1)  # Use up to 12 threads, leaving 4 for the system
-    chunk_size = max(2000, len(processed_texts) // (n_cores * 4))  # Optimize chunk size based on data and cores
+    # Optimize parameters based on corpus size
+    corpus_size = len(processed_texts)
+    n_cores = min(12, cpu_count() - 1)
+    chunk_size = max(100, min(2000, corpus_size // (n_cores * 4)))
     
-    logging.info(f"Using {n_cores} cores with chunk size of {chunk_size}")
+    # Adaptive parameters based on corpus size
+    if corpus_size < 1000:
+        passes = 100  # More passes for small corpora
+        iterations = 1000
+        eval_every = 10
+    elif corpus_size < 5000:
+        passes = 50
+        iterations = 500
+        eval_every = 25
+    else:
+        passes = 25  # Fewer passes needed for large corpora
+        iterations = 250
+        eval_every = 50
+    
+    logging.info(f"Corpus size: {corpus_size}, Using parameters: passes={passes}, iterations={iterations}")
     
     dictionary = Dictionary(processed_texts)
     dictionary.filter_extremes(no_below=5, no_above=0.7)
     corpus = [dictionary.doc2bow(text) for text in processed_texts]
     
-
+    print("Training LDA model...")
     lda_params = {
         'num_topics': n_topics,
-        'passes': 15,
+        'passes': 50,  # Increased from 15 to 50
+        'iterations': 500,  # Added explicit iterations
         'chunksize': chunk_size,
         'workers': n_cores,
         'random_state': 42,
         'minimum_probability': 0.01,
         'dtype': np.float32,
-        'per_word_topics': True
+        'per_word_topics': True,
+        'update_every': 1,  # Update model after every chunk
+        'eval_every': 10,   # Compute perplexity every 10 updates
+        'alpha': 'auto',    # Learn alpha parameter from data
+        'eta': 'auto'       # Learn eta parameter from data
     }
     
+    # Add minimum document length check
+    min_doc_length = 10
+    filtered_corpus = [doc for doc in corpus if len(doc) >= min_doc_length]
+    
+    if len(filtered_corpus) < len(corpus):
+        logging.warning(f"Filtered out {len(corpus) - len(filtered_corpus)} documents with fewer than {min_doc_length} tokens")
+    
+    if not filtered_corpus:
+        logging.error("No documents remaining after filtering")
+        return {
+            'topics': [],
+            'doc_topic_distribution': [],
+            'model_perplexity': 0.0,
+            'num_terms': len(dictionary),
+            'num_documents': 0,
+            'used_multicore': False,
+            'error': 'Insufficient data for topic modeling'
+        }
+
+    lda_params = {
+        'num_topics': n_topics,
+        'passes': passes,
+        'iterations': iterations,
+        'chunksize': chunk_size,
+        'workers': n_cores,
+        'random_state': 42,
+        'minimum_probability': 0.01,
+        'dtype': np.float32,
+        'per_word_topics': True,
+        'update_every': 1,
+        'eval_every': eval_every,
+        'alpha': 'auto',
+        'eta': 'auto'
+    }
+
     try:
-        # Attempt parallel processing first
+        # Enable convergence monitoring through logging
+        logging.basicConfig(level=logging.INFO)
+        
         lda_model = LdaMulticore(
-            corpus=corpus,
+            corpus=filtered_corpus,
             id2word=dictionary,
             **lda_params
         )
@@ -324,12 +375,12 @@ def analyze_topic_coherence(data: List[Dict[str, Any]], n_topics: int = 5):
     except Exception as e:
         logging.error(f"LdaMulticore error: {str(e)}")
         # Fallback to single-core processing
-        multicore_params = ['workers', 'batch']
+        multicore_params = ['workers']
         for param in multicore_params:
             lda_params.pop(param, None)
             
         lda_model = LdaModel(
-            corpus=corpus,
+            corpus=filtered_corpus,
             id2word=dictionary,
             **lda_params
         )
@@ -346,7 +397,7 @@ def analyze_topic_coherence(data: List[Dict[str, Any]], n_topics: int = 5):
     
     # Calculate document-topic distributions
     doc_topics = []
-    for doc in corpus:
+    for doc in filtered_corpus:
         topic_dist = lda_model.get_document_topics(doc, minimum_probability=0.01)
         doc_topics.append([{'topic_id': topic_id, 'weight': float(weight)} 
                           for topic_id, weight in topic_dist])
@@ -354,9 +405,9 @@ def analyze_topic_coherence(data: List[Dict[str, Any]], n_topics: int = 5):
     return {
         'topics': topics,
         'doc_topic_distribution': doc_topics,
-        'model_perplexity': float(lda_model.log_perplexity(corpus)),
+        'model_perplexity': float(lda_model.log_perplexity(filtered_corpus)),
         'num_terms': len(dictionary),
-        'num_documents': len(corpus),
+        'num_documents': len(filtered_corpus),
         'used_multicore': isinstance(lda_model, LdaMulticore)
     }
 
