@@ -3,6 +3,7 @@ import numpy as np
 from typing import Dict, List, Any
 from collections import Counter
 from sklearn.feature_extraction.text import CountVectorizer
+import logging
 
 class StatisticalAnalyzer:
     def __init__(self):
@@ -23,23 +24,39 @@ class StatisticalAnalyzer:
         
         return float(entropy(real_array, qk=synth_array))
     
-    def analyze_ngrams(self, texts: List[str]) -> Dict[str, List]:
-        """Analyze bigrams and trigrams in texts"""
-        # Generate bigrams
-        bigram_matrix = self.vectorizer_bigram.fit_transform(texts)
-        bigram_freq = bigram_matrix.sum(axis=0).A1
-        bigram_terms = self.vectorizer_bigram.get_feature_names_out()
-        bigrams = [(term, freq) for term, freq in zip(bigram_terms, bigram_freq)]
-        bigrams.sort(key=lambda x: x[1], reverse=True)
+    def analyze_ngrams(self, texts: List[str]) -> Dict[str, List[tuple]]:
+        """Analyze n-grams in the given texts and return their frequencies."""
+        logging.info(f"Starting ngram analysis with {len(texts)} texts")
         
-        # Generate trigrams
-        trigram_matrix = self.vectorizer_trigram.fit_transform(texts)
-        trigram_freq = trigram_matrix.sum(axis=0).A1
-        trigram_terms = self.vectorizer_trigram.get_feature_names_out()
-        trigrams = [(term, freq) for term, freq in zip(trigram_terms, trigram_freq)]
-        trigrams.sort(key=lambda x: x[1], reverse=True)
-        
-        return {
-            'bigrams': bigrams,
-            'trigrams': trigrams
-        }
+        # Log the input texts
+        for idx, text in enumerate(texts):
+            logging.info(f"Text {idx + 1} (length {len(text)}): {text[:100]}...")  # First 100 chars
+            
+        if not texts:
+            logging.error("No texts provided for ngram analysis")
+            raise ValueError("No texts provided for analysis")
+            
+        try:
+            # Analyze bigrams
+            logging.info("Analyzing bigrams...")
+            bigram_matrix = self.vectorizer_bigram.fit_transform(texts)
+            bigram_freq = bigram_matrix.sum(axis=0).A1
+            bigrams = [(word, bigram_freq[idx]) for word, idx in self.vectorizer_bigram.vocabulary_.items()]
+            logging.info(f"Found {len(bigrams)} unique bigrams")
+
+            # Analyze trigrams
+            logging.info("Analyzing trigrams...")
+            trigram_matrix = self.vectorizer_trigram.fit_transform(texts)
+            trigram_freq = trigram_matrix.sum(axis=0).A1
+            trigrams = [(word, trigram_freq[idx]) for word, idx in self.vectorizer_trigram.vocabulary_.items()]
+            logging.info(f"Found {len(trigrams)} unique trigrams")
+
+            return {
+                'bigrams': sorted(bigrams, key=lambda x: x[1], reverse=True),
+                'trigrams': sorted(trigrams, key=lambda x: x[1], reverse=True)
+            }
+            
+        except Exception as e:
+            logging.error(f"Error in ngram analysis: {str(e)}")
+            logging.error(f"Text sample causing error: {texts[:2]}")  # Log first two texts
+            raise

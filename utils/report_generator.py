@@ -9,6 +9,7 @@ from pathlib import Path
 import tempfile
 import shutil
 from contextlib import contextmanager
+import logging
 
 @contextmanager
 def managed_temp_directory():
@@ -30,6 +31,10 @@ def generate_pdf_report(
     
     with managed_temp_directory() as temp_dir:
         try:
+            # Log the input data for debugging
+            logging.info(f"Generating report for file: {file_name}")
+            logging.info(f"Number of duplicates: {len(duplicates)}")
+            
             # Initialize visualization and statistical analyzers
             viz_gen = VisualizationGenerator(temp_dir)
             stat_analyzer = StatisticalAnalyzer()
@@ -128,15 +133,21 @@ def generate_pdf_report(
                     pdf.multi_cell(0, 8, "_" * 80)
                     pdf.ln(5)
   
+            # Only generate visualizations if we have data to analyze
+            if duplicates or sentiment_mismatches:
+                # Add wordcloud
+                wordcloud_path = viz_gen.generate_wordcloud(
+                    [item['text'] for item in duplicates + sentiment_mismatches]
+                )
+                pdf.add_page()
+                pdf.image(wordcloud_path, x=30, w=150)
+            else:
+                logging.info("No duplicates or sentiment mismatches found - skipping wordcloud generation")
+                pdf.add_page()
+                pdf.set_font("Arial", size=12)
+                pdf.cell(0, 10, "No duplicates or sentiment mismatches found in the dataset.", ln=True)
             
-            # Add wordcloud
-            wordcloud_path = viz_gen.generate_wordcloud(
-                [item['text'] for item in duplicates + sentiment_mismatches]
-            )
-            pdf.add_page()
-            pdf.image(wordcloud_path, x=30, w=150)
-            
-            # Add KL divergence and token overlap analysis
+            # Add KL divergence only if data is available
             if 'real_distribution' in report:
                 kl_div_path = viz_gen.generate_kl_divergence_plot(
                     report['real_distribution'],
@@ -146,18 +157,27 @@ def generate_pdf_report(
                 pdf.add_page()
                 pdf.image(kl_div_path, x=30, w=150)
             
-            # Add n-gram analysis
-            ngram_path = viz_gen.generate_ngram_plot(
-                stat_analyzer.analyze_ngrams([item['text'] for item in duplicates])
-            )
-            pdf.add_page()
-            pdf.image(ngram_path, x=30, w=150)
+            # Only generate ngram analysis if we have duplicates
+            if duplicates:
+                logging.info(f"Attempting to analyze ngrams for {len(duplicates)} texts")
+                ngram_path = viz_gen.generate_ngram_plot(
+                    stat_analyzer.analyze_ngrams([item['text'] for item in duplicates])
+                )
+                pdf.add_page()
+                pdf.image(ngram_path, x=30, w=150)
+            else:
+                logging.info("No duplicates found - skipping ngram analysis")
+                pdf.add_page()
+                pdf.set_font("Arial", size=12)
+                pdf.cell(0, 10, "No duplicate texts found for n-gram analysis.", ln=True)
             
             # Save the report
             pdf.output(file_name)
             
         except Exception as e:
-            print(f"Error generating PDF: {str(e)}")
+            logging.error(f"Error generating PDF: {str(e)}")
+            logging.error(f"Current state - duplicates length: {len(duplicates)}")
+            logging.error(f"Sample of duplicates data structure: {str(duplicates[:2])}")
             raise
 
 def truncate_text(text: str, max_length: int) -> str:
