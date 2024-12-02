@@ -66,12 +66,12 @@ def analyze_quality(data):
         })
     return results
 
-def validate_sentiments_batch(data: List[Dict[str, Any]], domain: str) -> List[Dict[str, Any]]:
+def validate_sentiments_batch(data: List[Dict[str, Any]], domain: str, model_key: str = 'distilbert-sst2') -> List[Dict[str, Any]]:
     """
     Batch sentiment validation for multiple reviews.
     Returns only high-confidence mismatches.
     """
-    validator = SentimentValidator()
+    validator = SentimentValidator(model_key=model_key)
     mismatches = []
     
     for entry in data:
@@ -189,7 +189,7 @@ def process_file(file_path: Path, model_key: str, domain_override: str = None) -
             quality_scores = analyze_quality(data)
             
             print("Validating sentiments...")
-            sentiment_mismatches = validate_sentiments_batch(data, domain)
+            sentiment_mismatches = validate_sentiments_batch(data, domain, model_key)
             
             print("Analyzing topics...")
             topic_analysis = analyze_topic_coherence(data, n_topics=5)

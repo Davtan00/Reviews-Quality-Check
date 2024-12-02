@@ -46,14 +46,21 @@ def generate_pdf_report(
             pdf.set_auto_page_break(auto=True, margin=10)
             pdf.add_page()
             
-            # Title Section
-            clean_filename = sanitize_text(os.path.basename(file_name))
-            title = f"Analysis Report for {clean_filename}"
-            pdf.set_font("Arial", size=14, style='B')
-            title_w = pdf.get_string_width(title)
+            # Main title
+            pdf.set_font("Arial", size=16, style='B')
+            main_title = "Analysis Report"
+            main_title_w = pdf.get_string_width(main_title)
             page_w = pdf.w - 2 * PDF_MARGIN
-            pdf.set_x((page_w - title_w) / 2 + PDF_MARGIN)
-            pdf.cell(title_w, 8, title, ln=True, align='C')
+            pdf.set_x((page_w - main_title_w) / 2 + PDF_MARGIN)
+            pdf.cell(main_title_w, 10, main_title, ln=True, align='C')
+            
+            # Subtitle (filename without extension)
+            clean_filename = sanitize_text(Path(file_name).stem)
+            pdf.set_font("Arial", size=10)
+            pdf.ln(2)
+            subtitle_w = pdf.get_string_width(clean_filename)
+            pdf.set_x((page_w - subtitle_w) / 2 + PDF_MARGIN)
+            pdf.cell(subtitle_w, 6, clean_filename, ln=True, align='C')
             pdf.ln(4)
 
             # Two-column layout for metrics

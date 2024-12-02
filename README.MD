@@ -1,4 +1,8 @@
 # Advanced Review Analysis System
+Python 3.10.0 needed
+1. pip install -r reqs.txt
+2. python -m spacy download en_core_web_sm
+
 
 ## Overview
 This system provides my attempt at asophisticated analysis of synthetic reviews using state-of-the-art natural language processing techniques,while attempting not not use any LLM Models. It focuses on sentiment analysis, topic modeling, and linguistic pattern detection.
