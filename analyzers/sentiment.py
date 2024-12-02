@@ -1,31 +1,33 @@
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
-from nltk.tokenize import word_tokenize
+from typing import Dict, Union, List
+import logging
+from configs.models import ModelConfig, DomainIndicators
+from nltk import word_tokenize
+import re
 
 class SentimentValidator:
-    """
-    Advanced sentiment validation system that combines:
-    - BERT-based sentiment predictions
-    - Domain-specific sentiment indicators
-    - Contrast marker detection
-    - Confidence thresholding
+    """Advanced sentiment validation system with configurable models"""
     
-    Designed to minimize false positives by only flagging high-confidence mismatches
-    while accounting for domain context and linguistic nuances.
-    """
-    ## TODO: Compre results with using  "nlptown/bert-base-multilingual-uncased-sentiment"
-    def __init__(self):
-        # Load a lightweight BERT model fine-tuned for sentiment(or load a big boy one if you can run it)
-        model_name = "distilbert-base-uncased-finetuned-sst-2-english"
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
+    def __init__(self, model_key: str = 'distilbert-sst2'):
+        """
+        Initialize the sentiment validator with a specific model.
         
-       
-        self.confidence_thresholds = {
-            "neutral": 0.85,  # More lenient threshold for neutral predictions
-            "positive": 0.90,
-            "negative": 0.90,
-            "default": 0.95  # Fallback threshold
-        }
+        Args:
+            model_key: Key from ModelConfig.SUPPORTED_MODELS
+        """
+        if model_key not in ModelConfig.SUPPORTED_MODELS:
+            raise ValueError(f"Unsupported model key. Choose from: {list(ModelConfig.SUPPORTED_MODELS.keys())}")
+            
+        self.model_config = ModelConfig.SUPPORTED_MODELS[model_key]
+        self.model_type = self.model_config['type']
+        self.label_mapping = self.model_config['mapping']
+        
+        logging.info(f"Loading sentiment model: {self.model_config['name']}")
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_config['name'])
+        self.model = AutoModelForSequenceClassification.from_pretrained(self.model_config['name'])
+        
+        self.confidence_thresholds = self._get_default_thresholds()
+        self.domain_indicators = DomainIndicators.INDICATORS
         
         # Common contrast markers that often indicate neutral sentiment
         self.contrast_markers = {'but', 'however', 'although', 'though', 'while', 'yet'}
@@ -56,174 +58,209 @@ class SentimentValidator:
             'explicit_neutral': r'(?i)(neutral|mixed|balanced|middle ground|average|moderate)',
             'pros_cons': r'(?i)(pros.*cons|advantages.*disadvantages|benefits.*drawbacks)',
         }
+
+    def _get_default_thresholds(self) -> Dict[str, float]:
+        """Get default confidence thresholds based on model type"""
+        if self.model_type == 'binary':
+            return {
+                "neutral": 0.85,
+                "positive": 0.90,
+                "negative": 0.90,
+                "default": 0.95
+            }
+        elif self.model_type == 'three-class':
+            return {
+                "neutral": 0.75,  # Lower threshold for native neutral detection
+                "positive": 0.85,
+                "negative": 0.85,
+                "default": 0.90
+            }
+        else:  # five-class
+            return {
+                "neutral": 0.70,
+                "positive": 0.80,
+                "negative": 0.80,
+                "default": 0.85
+            }
+
+    def _map_model_output(self, predicted_class: int, confidence: float) -> Dict[str, Union[str, float]]:
+        """Map model output to standardized sentiment with confidence"""
+        predicted_sentiment = self.label_mapping.get(predicted_class, 'neutral')
         
-        # Common domain-specific positive/negative indicators(gpt , no clue if these are actually good enough????)
-        self.domain_indicators = {
-            'technology': {
-                'positive': {'innovative', 'efficient', 'powerful', 'impressive', 'reliable'},
-                'negative': {'slow', 'buggy', 'expensive', 'disappointing', 'unreliable'},
-                'neutral_markers': {'average', 'standard', 'typical', 'expected'}
-            },
-            'software': {
-                'positive': {'user-friendly', 'intuitive', 'fast', 'robust', 'feature-rich', 'versatile', 'stable', 'secure', 'efficient', 'scalable'},
-                'negative': {'crashes', 'unresponsive', 'complicated', 'glitchy', 'slow', 'insecure', 'outdated', 'buggy', 'limited', 'inefficient'},
-                'neutral_markers': {'adequate', 'functional', 'standard', 'acceptable', 'usable'}
-            },
-            'hotel': {
-                'positive': {'luxurious', 'comfortable', 'clean', 'spacious', 'friendly staff', 'great service', 'convenient location', 'cozy', 'elegant', 'amenities'},
-                'negative': {'dirty', 'noisy', 'uncomfortable', 'rude staff', 'poor service', 'overpriced', 'crowded', 'small rooms', 'inconvenient', 'unhygienic'},
-                'neutral_markers': {'average', 'basic', 'standard', 'decent', 'adequate'}
-            },
-            'travel': {
-                'positive': {'adventurous', 'exciting', 'breathtaking', 'relaxing', 'memorable', 'spectacular', 'unforgettable', 'scenic', 'enjoyable', 'fascinating'},
-                'negative': {'boring', 'tiring', 'stressful', 'disappointing', 'dangerous', 'overrated', 'expensive', 'crowded', 'dull', 'tedious'},
-                'neutral_markers': {'ordinary', 'mediocre', 'typical', 'expected', 'standard'}
-            },
-            'education': {
-                'positive': {'informative', 'engaging', 'comprehensive', 'enlightening', 'inspirational', 'effective', 'supportive', 'innovative', 'challenging', 'rewarding'},
-                'negative': {'boring', 'uninformative', 'confusing', 'ineffective', 'unhelpful', 'outdated', 'dull', 'frustrating', 'disorganized', 'stressful'},
-                'neutral_markers': {'average', 'typical', 'standard', 'basic', 'mediocre'}
-            },
-            'ecommerce': {
-                'positive': {'convenient', 'fast shipping', 'great deals', 'user-friendly', 'secure', 'reliable', 'efficient', 'wide selection', 'responsive', 'satisfactory'},
-                'negative': {'delayed', 'poor customer service', 'fraudulent', 'difficult navigation', 'unreliable', 'damaged goods', 'overpriced', 'confusing', 'limited options', 'slow'},
-                'neutral_markers': {'average', 'acceptable', 'standard', 'typical', 'satisfactory'}
-            },
-            'social media': {
-                'positive': {'engaging', 'interactive', 'innovative', 'user-friendly', 'connective', 'fun', 'inspiring', 'entertaining', 'informative'},
-                'negative': {'toxic', 'privacy concerns', 'cyberbullying', 'spam', 'fake news', 'unreliable', 'time-consuming', 'annoying ads', 'glitchy'},
-                'neutral_markers': {'common', 'average', 'typical', 'standard', 'expected'}
-            },
-            'healthcare': {
-                'positive': {'caring', 'professional', 'compassionate', 'knowledgeable', 'efficient', 'reliable', 'thorough', 'state-of-the-art', 'clean', 'responsive'},
-                'negative': {'rude', 'unprofessional', 'inefficient', 'uncaring', 'dirty', 'long wait times', 'expensive', 'misdiagnosis', 'negligent', 'incompetent'},
-                'neutral_markers': {'standard', 'average', 'typical', 'adequate', 'sufficient'}
+        # Adjust confidence for multi-class models
+        if self.model_type == 'five-class':
+            # Combine confidences for merged classes
+            if predicted_class in [1, 2] or predicted_class in [4, 5]:
+                confidence = confidence * 0.9  # Penalty for merged classes
+        
+        return {
+            'sentiment': predicted_sentiment,
+            'confidence': confidence
+        }
+
+    def _check_domain_indicators(self, text: str, domain: str = None) -> Dict[str, Union[bool, str]]:
+        """
+        Check text for domain-specific sentiment indicators.
+        
+        Args:
+            text: The text to analyze
+            domain: The domain to check indicators against (e.g., 'technology', 'software')
+        
+        Returns:
+            Dict containing domain sentiment analysis results
+        """
+        if not domain or domain not in self.domain_indicators:
+            return {
+                'has_indicators': False,
+                'sentiment': None,
+                'domain': domain
+            }
+        
+        text_lower = text.lower()
+        domain_indicators = self.domain_indicators[domain]
+        
+        # Check for positive indicators
+        positive_matches = sum(1 for indicator in domain_indicators['positive'] 
+                             if indicator in text_lower)
+        
+        # Check for negative indicators
+        negative_matches = sum(1 for indicator in domain_indicators['negative'] 
+                             if indicator in text_lower)
+        
+        # Check for neutral markers
+        neutral_matches = sum(1 for marker in domain_indicators['neutral_markers'] 
+                            if marker in text_lower)
+        
+        # Determine domain sentiment
+        if neutral_matches > 0 and (positive_matches + negative_matches) <= neutral_matches:
+            domain_sentiment = 'neutral'
+        elif positive_matches > negative_matches:
+            domain_sentiment = 'positive'
+        elif negative_matches > positive_matches:
+            domain_sentiment = 'negative'
+        else:
+            domain_sentiment = None
+        
+        return {
+            'has_indicators': bool(positive_matches + negative_matches + neutral_matches),
+            'sentiment': domain_sentiment,
+            'domain': domain,
+            'indicator_counts': {
+                'positive': positive_matches,
+                'negative': negative_matches,
+                'neutral': neutral_matches
             }
         }
-    
-    def _preprocess_text(self, text: str):
-        """Basic text preprocessing"""
-        return text.lower().strip()
-    
-    def _check_domain_indicators(self, text: str, domain: str):
-        """Check for domain-specific sentiment indicators"""
-        if not domain or domain not in self.domain_indicators:
-            return None
+
+    def _analyze_context(self, text: str) -> Dict[str, bool]:
+        """
+        Analyze the context of the text for sentiment modifiers.
         
-        text = self._preprocess_text(text)
-        domain_info = self.domain_indicators[domain]
+        Args:
+            text: The text to analyze
         
-        positive_count = sum(1 for word in domain_info['positive'] if word in text)
-        negative_count = sum(1 for word in domain_info['negative'] if word in text)
-        neutral_count = sum(1 for word in domain_info['neutral_markers'] if word in text)
+        Returns:
+            Dict containing context analysis results
+        """
+        text_lower = text.lower()
+        words = word_tokenize(text_lower)
         
-        if positive_count > negative_count and positive_count > neutral_count:
-            return 'positive'
-        elif negative_count > positive_count and negative_count > neutral_count:
-            return 'negative'
-        elif neutral_count > 0:
-            return 'neutral'
-        return None
-    
+        return {
+            'has_contrast': any(marker in text_lower for marker in self.contrast_markers),
+            'has_neutral_indicators': any(indicator in text_lower for indicator in self.neutral_indicators),
+            'word_count': len(words),
+            'has_multiple_sentences': len(text.split('.')) > 1
+        }
+
     def _detect_neutral_patterns(self, text: str) -> bool:
-        """Check for linguistic patterns indicating neutral sentiment"""
-        import re
+        """
+        Detect neutral sentiment patterns using regex.
         
-        text = text.lower()
-        
-        # Check for balanced statements with positive and negative aspects
-        has_positive = any(word in text for word in self.domain_indicators.get('general', {}).get('positive', set()))
-        has_negative = any(word in text for word in self.domain_indicators.get('general', {}).get('negative', set()))
-        has_contrast = any(marker in text for marker in self.contrast_markers)
-        
-        if has_positive and has_negative and has_contrast:
-            return True
+        Args:
+            text: The text to analyze
             
-        # Check for neutral patterns
+        Returns:
+            bool: True if neutral patterns are detected
+        """
+        text_lower = text.lower()
+        
+        # Check each pattern
         for pattern in self.neutral_patterns.values():
-            if re.search(pattern, text):
+            if re.search(pattern, text_lower):
                 return True
                 
         return False
-    ## https://getthematic.com/sentiment-analysis
-    def _analyze_context(self, text: str) -> dict:
-        """Enhanced context analysis for better neutral detection"""
-        # Add comparison detection
-        has_comparison = any(pattern in text.lower() for pattern in [
-            'compared to', 'versus', 'vs', 'relative to',
-            'better than', 'worse than', 'similar to'
-        ])
+
+    def _get_confidence_threshold(self, sentiment_type: str) -> float:
+        """
+        Get confidence threshold for a specific sentiment type.
         
-        # Add subjectivity detection
-        objective_indicators = {
-            'is', 'are', 'was', 'were', 'measures', 'costs',
-            'weighs', 'contains', 'includes', 'consists'
-        }
-        has_objective_statement = any(word in text.lower().split() for word in objective_indicators)
+        Args:
+            sentiment_type: The type of sentiment (positive, negative, neutral)
+            
+        Returns:
+            float: The confidence threshold
+        """
+        return self.confidence_thresholds.get(sentiment_type, 
+                                            self.confidence_thresholds['default'])
+
+    def _adjust_confidence_for_neutral(self, confidence: float, 
+                                     context: Dict[str, bool], 
+                                     text: str) -> float:
+        """
+        Adjust confidence score for neutral predictions based on context.
         
-        return {
-            'has_comparison': has_comparison,
-            'is_objective': has_objective_statement
-        }
-    ## Will not work if we have multipl sentence with + + , -
-    def _detect_balanced_statement(self, text: str) -> bool:
-        """Detect statements containing both positive and negative aspects"""
-        sentences = text.split('.')
-        for sentence in sentences:
-            # Check for contrast markers with positive/negative combinations
-            for marker in self.contrast_markers:
-                if marker in sentence.lower():
-                    parts = sentence.lower().split(marker)
-                    if len(parts) == 2:
-                        has_positive_first = any(pos in parts[0] 
-                            for pos in self.domain_indicators.get('general', {}).get('positive', set()))
-                        has_negative_second = any(neg in parts[1] 
-                            for neg in self.domain_indicators.get('general', {}).get('negative', set()))
-                        if has_positive_first and has_negative_second:
-                            return True
-        return False
-    
-    def _adjust_confidence_for_neutral(self, confidence: float, context: dict, text: str) -> float:
-        """Adjust confidence scores for neutral predictions"""
-        if context.get('has_comparison') or context.get('is_objective'):
-            # Reduce confidence for comparative or objective statements
-            confidence = min(confidence, 0.75)
-        
-        if self._detect_balanced_statement(text):
-            # Reduce confidence for balanced statements
-            confidence = min(confidence, 0.70)
-        
+        Args:
+            confidence: Original confidence score
+            context: Context analysis results
+            text: Original text
+            
+        Returns:
+            float: Adjusted confidence score
+        """
+        # Reduce confidence if there are contrasting statements
+        if context['has_contrast']:
+            confidence *= 0.9
+            
+        # Adjust based on text length and complexity
+        if context['has_multiple_sentences'] and context['word_count'] > 20:
+            confidence *= 0.95
+            
+        # Stronger confidence if multiple neutral indicators are present
+        neutral_count = sum(1 for indicator in self.neutral_indicators 
+                          if indicator in text.lower())
+        if neutral_count > 1:
+            confidence = min(confidence * 1.1, 1.0)
+            
         return confidence
-    
-    def _get_confidence_threshold(self, predicted_sentiment: str) -> float:
-        """Get the confidence threshold for a specific sentiment type"""
-        return self.confidence_thresholds.get(predicted_sentiment, self.confidence_thresholds["default"])
-    
+
     def validate_sentiment(self, text: str, labeled_sentiment: str, domain: str = None):
-        """Enhanced sentiment validation with better neutral detection"""
+        """Enhanced sentiment validation with model-specific handling"""
         domain_sentiment = self._check_domain_indicators(text, domain)
         
         # Get context analysis
         context = self._analyze_context(text)
         
-        # Get BERT model prediction
+        # Get model prediction
         inputs = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
         outputs = self.model(**inputs)
         probs = outputs.logits.softmax(dim=-1)
         predicted_class = outputs.logits.argmax().item()
         confidence = probs[0][predicted_class].item()
         
-        # Check for neutral indicators
+        # Map model output to standardized format
+        prediction = self._map_model_output(predicted_class, confidence)
+        predicted_sentiment = prediction['sentiment']
+        confidence = prediction['confidence']
+        
+        # Apply neutral detection logic
         has_neutral_indicators = any(indicator in text.lower() for indicator in self.neutral_indicators)
         has_neutral_patterns = self._detect_neutral_patterns(text)
         
         # Determine predicted sentiment with neutral consideration
         if has_neutral_indicators or has_neutral_patterns:
             predicted_sentiment = "neutral"
-            # Adjust confidence for neutral predictions
             confidence = self._adjust_confidence_for_neutral(confidence, context, text)
-        else:
-            predicted_sentiment = "positive" if predicted_class == 1 else "negative"
         
         # Determine if there's a mismatch using dynamic thresholds
         is_mismatch = False
@@ -244,5 +281,11 @@ class SentimentValidator:
             'domain_sentiment': domain_sentiment,
             'has_neutral_indicators': has_neutral_indicators,
             'has_neutral_patterns': has_neutral_patterns,
-            'threshold_used': threshold  # Added for debugging/monitoring
+            'model_type': self.model_type,
+            'model_name': self.model_config['name']
         }
+
+    @classmethod
+    def list_available_models(cls) -> Dict[str, str]:
+        """List available sentiment models with descriptions"""
+        return {k: v['description'] for k, v in ModelConfig.SUPPORTED_MODELS.items()}

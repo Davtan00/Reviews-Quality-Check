@@ -7,9 +7,14 @@ This system provides my attempt at asophisticated analysis of synthetic reviews 
 
 ### 1. Sentiment Analysis
 - Three-way classification (positive/neutral/negative)
-- Context-aware sentiment detection
+- Multiple model support:
+  - DistilBERT (binary classification with rule-based neutral)
+  - Multilingual BERT (5-class sentiment)
+  - RoBERTa (native 3-class sentiment)
+- Model selection via command-line interface
+- Dynamic confidence thresholds based on model type
 - Domain-specific sentiment indicators
-- Confidence scoring and threshold-based validation
+- Context-aware sentiment detection
 
 ### 2. Quality Analysis
 - Readability scoring using Flesch Reading Ease (Needs improvement) 
@@ -181,3 +186,47 @@ Cambria, E., Schuller, B., Xia, Y., & Havasi, C. (2013). New avenues in opinion 
 - Add customizable report templates
 - Enhance visualization options based on data volume // Or make a strict version which will only be used in the pipelines to further improve the quality of the synthetic data
 - Optimize memory usage for large datasets
+
+
+
+## Available Models 
+1. **distilbert-sst2** (Default)
+   - Fast and efficient binary classification
+   - Rule-based neutral detection
+   - Optimized for English text
+
+2. **nlptown-bert**
+   - Multilingual support
+   - Five-class sentiment granularity
+   - Merged to three-way classification
+
+3. **roberta-sentiment**
+   - Native three-way classification
+   - Twitter-optimized sentiment detection
+   - Enhanced neutral recognition
+
+## Technical Implementation
+
+### Sentiment Analysis Architecture
+Our sentiment analyzer now supports multiple model architectures:
+
+1. **Multi-Model Support**
+   - Configurable model selection via CLI
+   - Standardized output format across models
+   - Model-specific confidence thresholds
+
+2. **Model-Specific Optimizations**
+   - Binary models: Enhanced neutral detection
+   - Five-class models: Sentiment merging
+   - Three-class models: Direct mapping
+
+
+## CLI Usage
+**Default model (DistilBERT)**
+python review_analysis.py
+**Specify different model**
+python review_analysis.py -m cardiffnlp-twitter
+**List available models**
+python review_analysis.py -l
+**Specify domain**
+python review_analysis.py -m cardiffnlp-twitter -d technology

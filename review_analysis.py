@@ -1,3 +1,4 @@
+import argparse
 import os
 import json
 import pandas as pd
@@ -32,6 +33,7 @@ from gensim.corpora import Dictionary
 from gensim.models.ldamodel import LdaModel
 from gensim.models.ldamulticore import LdaMulticore
 from multiprocessing import cpu_count
+from configs.models import ModelConfig, DomainIndicators
 
 def initialize_nltk():
     """Initialize NLTK resources once at startup"""
@@ -112,13 +114,28 @@ class ResourceManager:
         self.active_resources.clear()
         self.model_cache.clear()
 
+def parse_arguments():
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(description='Advanced Review Analysis System')
+    parser.add_argument('-m', '--model', 
+                       choices=list(ModelConfig.SUPPORTED_MODELS.keys()),
+                       default='distilbert-sst2',
+                       help='Sentiment analysis model to use')
+    parser.add_argument('-l', '--list-models', 
+                       action='store_true',
+                       help='List available sentiment analysis models')
+    parser.add_argument('-d', '--domain', 
+                       type=str,
+                       help='Domain to use for sentiment validation (overrides JSON domain)')
+    return parser.parse_args()
+
 @contextmanager
-def managed_analyzers():
+def managed_analyzers(model_key: str = 'distilbert-sst2'):
     """Context manager for analyzer resources"""
     resource_manager = ResourceManager()
     try:
         # Initialize analyzers with resource management
-        sentiment_validator = SentimentValidator()
+        sentiment_validator = SentimentValidator(model_key=model_key)
         similarity_analyzer = SophisticatedSimilarityAnalyzer()
         topic_analyzer = SophisticatedTopicAnalyzer()
         
@@ -135,18 +152,30 @@ def managed_analyzers():
     finally:
         resource_manager.cleanup()
 
-def process_file(file_path: Path) -> Dict[str, Any]:
+def process_file(file_path: Path, model_key: str, domain_override: str = None) -> Dict[str, Any]:
     """Process a single file with proper resource management"""
-    with managed_analyzers() as analyzers:
+    with managed_analyzers(model_key=model_key) as analyzers:
         try:
             print(f"\nProcessing file: {file_path}")
             
             with open(file_path, 'r') as f:
                 json_data = json.load(f)
                 data = json_data["generated_data"]
-                domain = json_data.get("domain", "general")
+                
+                # More explicit domain handling with logging
+                json_domain = json_data.get("domain")
+                if domain_override:
+                    domain = domain_override
+                    logging.info(f"Using override domain: {domain} (original domain in file: {json_domain})")
+                elif json_domain:
+                    domain = json_domain
+                    logging.info(f"Using domain from JSON file: {domain}")
+                else:
+                    domain = "general"
+                    logging.warning(f"No domain specified in file or command line, using default: {domain}")
             
             total_reviews = len(data)
+            logging.info(f"Processing {total_reviews} reviews with domain: {domain}")
             
             print("Finding duplicates...")
             duplicates = find_duplicates(data)
@@ -373,37 +402,54 @@ def analyze_reviews_comprehensively(data):
     }
 
 def main():
-    logging.info("Starting review analysis...")
+    """Main execution function"""
+    args = parse_arguments()
     
-    data_folder = Path(GENERATED_DATA_FOLDER)
-    report_folder = Path(REPORT_FOLDER)
+    # Handle --list-models flag
+    if args.list_models:
+        models = SentimentValidator.list_available_models()
+        print("\nAvailable sentiment analysis models:")
+        for key, description in models.items():
+            print(f"  {key}: {description}")
+        return
+
+    # Initialize NLTK resources
+    initialize_nltk()
     
-    # Add logging to see what files are found
-    json_files = list(data_folder.glob('*.json'))
-    logging.info(f"Found {len(json_files)} JSON files to process: {[f.name for f in json_files]}")
-    
-    for file_path in json_files:
-        try:
-            logging.info(f"Processing file: {file_path}")
-            results = process_file(file_path)
-            report_path = report_folder / f"{file_path.stem}_report.pdf"
-            
-            # Add logging before and after report generation
-            logging.info(f"Generating report for {file_path.stem}")
-            generate_pdf_report(
+    # Process files with specified model
+    try:
+        input_folder = Path(GENERATED_DATA_FOLDER)
+        output_folder = Path(REPORT_FOLDER)
+        
+        # Create output folder if it doesn't exist
+        output_folder.mkdir(parents=True, exist_ok=True)
+        
+        # Process each JSON file in the input folder
+        for file_path in input_folder.glob('*.json'):
+            try:
+                results = process_file(file_path, args.model)
+                
+                # Generate report name
+                report_name = f"analysis_report_{file_path.stem}_{args.model}.pdf"
+                report_path = output_folder / report_name
+                
+                # Generate PDF report with all required data
+                generate_pdf_report(
                 file_name=str(report_path),
                 report=results,
                 duplicates=results['duplicates'],
                 sentiment_mismatches=results['sentiment_mismatches'],
                 similarity_pairs=results['similarity']
-            )
-            logging.info(f"Successfully generated report: {report_path}")
-            
-        except Exception as e:
-            logging.error(f"Failed to process {file_path}: {str(e)}")
-            # Add stack trace for better error diagnosis
-            logging.exception("Detailed error information:")
-            continue
+                )
+                print(f"Report generated: {report_path}")
+                
+            except Exception as e:
+                logging.error(f"Error processing file {file_path}: {str(e)}")
+                continue
+                
+    except Exception as e:
+        logging.error(f"Error in main execution: {str(e)}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
