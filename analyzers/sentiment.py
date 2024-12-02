@@ -12,15 +12,20 @@ class SentimentValidator:
     Designed to minimize false positives by only flagging high-confidence mismatches
     while accounting for domain context and linguistic nuances.
     """
-    
+    ## TODO: Compre results with using  "nlptown/bert-base-multilingual-uncased-sentiment"
     def __init__(self):
         # Load a lightweight BERT model fine-tuned for sentiment(or load a big boy one if you can run it)
         model_name = "distilbert-base-uncased-finetuned-sst-2-english"
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
         
-        # High confidence threshold for flagging mismatches
-        self.confidence_threshold = 0.95
+       
+        self.confidence_thresholds = {
+            "neutral": 0.85,  # More lenient threshold for neutral predictions
+            "positive": 0.90,
+            "negative": 0.90,
+            "default": 0.95  # Fallback threshold
+        }
         
         # Common contrast markers that often indicate neutral sentiment
         self.contrast_markers = {'but', 'however', 'although', 'though', 'while', 'yet'}
@@ -140,10 +145,66 @@ class SentimentValidator:
                 return True
                 
         return False
+    ## https://getthematic.com/sentiment-analysis
+    def _analyze_context(self, text: str) -> dict:
+        """Enhanced context analysis for better neutral detection"""
+        # Add comparison detection
+        has_comparison = any(pattern in text.lower() for pattern in [
+            'compared to', 'versus', 'vs', 'relative to',
+            'better than', 'worse than', 'similar to'
+        ])
+        
+        # Add subjectivity detection
+        objective_indicators = {
+            'is', 'are', 'was', 'were', 'measures', 'costs',
+            'weighs', 'contains', 'includes', 'consists'
+        }
+        has_objective_statement = any(word in text.lower().split() for word in objective_indicators)
+        
+        return {
+            'has_comparison': has_comparison,
+            'is_objective': has_objective_statement
+        }
+    ## Will not work if we have multipl sentence with + + , -
+    def _detect_balanced_statement(self, text: str) -> bool:
+        """Detect statements containing both positive and negative aspects"""
+        sentences = text.split('.')
+        for sentence in sentences:
+            # Check for contrast markers with positive/negative combinations
+            for marker in self.contrast_markers:
+                if marker in sentence.lower():
+                    parts = sentence.lower().split(marker)
+                    if len(parts) == 2:
+                        has_positive_first = any(pos in parts[0] 
+                            for pos in self.domain_indicators.get('general', {}).get('positive', set()))
+                        has_negative_second = any(neg in parts[1] 
+                            for neg in self.domain_indicators.get('general', {}).get('negative', set()))
+                        if has_positive_first and has_negative_second:
+                            return True
+        return False
+    
+    def _adjust_confidence_for_neutral(self, confidence: float, context: dict, text: str) -> float:
+        """Adjust confidence scores for neutral predictions"""
+        if context.get('has_comparison') or context.get('is_objective'):
+            # Reduce confidence for comparative or objective statements
+            confidence = min(confidence, 0.75)
+        
+        if self._detect_balanced_statement(text):
+            # Reduce confidence for balanced statements
+            confidence = min(confidence, 0.70)
+        
+        return confidence
+    
+    def _get_confidence_threshold(self, predicted_sentiment: str) -> float:
+        """Get the confidence threshold for a specific sentiment type"""
+        return self.confidence_thresholds.get(predicted_sentiment, self.confidence_thresholds["default"])
     
     def validate_sentiment(self, text: str, labeled_sentiment: str, domain: str = None):
         """Enhanced sentiment validation with better neutral detection"""
         domain_sentiment = self._check_domain_indicators(text, domain)
+        
+        # Get context analysis
+        context = self._analyze_context(text)
         
         # Get BERT model prediction
         inputs = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
@@ -160,22 +221,21 @@ class SentimentValidator:
         if has_neutral_indicators or has_neutral_patterns:
             predicted_sentiment = "neutral"
             # Adjust confidence for neutral predictions
-            confidence = min(confidence, 0.8)  # Cap confidence for neutral predictions
+            confidence = self._adjust_confidence_for_neutral(confidence, context, text)
         else:
             predicted_sentiment = "positive" if predicted_class == 1 else "negative"
         
-        # Determine if there's a mismatch
+        # Determine if there's a mismatch using dynamic thresholds
         is_mismatch = False
         if labeled_sentiment == "neutral":
-            # For neutral labeled sentiments, only flag as mismatch if we're very confident
-            # it's strongly positive or negative
-            is_mismatch = (confidence > self.confidence_threshold and 
+            threshold = self._get_confidence_threshold("neutral")
+            is_mismatch = (confidence > threshold and 
                           not has_neutral_indicators and 
                           not has_neutral_patterns)
         else:
-            # For positive/negative labeled sentiments, flag if prediction differs
+            threshold = self._get_confidence_threshold(predicted_sentiment)
             is_mismatch = (predicted_sentiment != labeled_sentiment and 
-                          confidence >= self.confidence_threshold)
+                          confidence >= threshold)
         
         return {
             'is_mismatch': is_mismatch,
@@ -183,5 +243,6 @@ class SentimentValidator:
             'confidence': confidence,
             'domain_sentiment': domain_sentiment,
             'has_neutral_indicators': has_neutral_indicators,
-            'has_neutral_patterns': has_neutral_patterns
+            'has_neutral_patterns': has_neutral_patterns,
+            'threshold_used': threshold  # Added for debugging/monitoring
         }
