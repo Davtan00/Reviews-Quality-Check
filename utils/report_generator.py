@@ -32,12 +32,6 @@ def generate_pdf_report(
     
     with managed_temp_directory() as temp_dir:
         try:
-            # Store sentiment mismatches separately for detailed analysis
-            sm_file_path = str(Path(file_name).parent / f"SM_{Path(file_name).stem}.json")
-            with open(sm_file_path, 'w', encoding='utf-8') as f:
-                json.dump(sentiment_mismatches, f, indent=2, ensure_ascii=False)
-            logging.info(f"Saved sentiment mismatches to: {sm_file_path}")
-            
             # Initialize visualization and statistical analyzers
             viz_gen = VisualizationGenerator(temp_dir)
             stat_analyzer = StatisticalAnalyzer()
@@ -74,9 +68,11 @@ def generate_pdf_report(
             
             stats = [
                 ("Total Reviews", report.get('total_reviews', 0)),
-                ("Duplicates Found", report.get('duplicates_found', 0)),
+                ("Duplicates Found", sum(len(group) - 1 for group in duplicates)),  
+                ("Similar Pairs", len(similarity_pairs)),
                 ("Sentiment Mismatches", len(sentiment_mismatches)),
-                ("High Similarity Pairs", len(similarity_pairs))
+                ("Reviews After Cleaning", report.get('total_reviews', 0) - 
+                    (sum(len(group) - 1 for group in duplicates) + len(similarity_pairs)))
             ]
             
             for label, value in stats:
@@ -126,15 +122,25 @@ def generate_pdf_report(
             
             # Add wordcloud if data exists
             if duplicates or sentiment_mismatches:
-                wordcloud_path = viz_gen.generate_wordcloud(
-                    [item['text'] for item in duplicates + sentiment_mismatches]
-                )
+                # Extract texts properly based on data structure
+                texts = []
+                # For duplicates (list of groups), get text from each review in each group
+                for group in duplicates:
+                    texts.extend(item['text'] for item in group)
+                # For sentiment mismatches (list of dicts), get text directly
+                texts.extend(item['text'] for item in sentiment_mismatches)
+                
+                wordcloud_path = viz_gen.generate_wordcloud(texts)
                 pdf.image(wordcloud_path, x=20, w=170)  # Increased width and adjusted x position
             
             # Add ngram plots side by side
             if duplicates:
+                # Flatten duplicate groups and extract texts
+                duplicate_texts = []
+                for group in duplicates:
+                    duplicate_texts.extend(item['text'] for item in group)
                 ngram_path = viz_gen.generate_ngram_plot(
-                    stat_analyzer.analyze_ngrams([item['text'] for item in duplicates])
+                    stat_analyzer.analyze_ngrams(duplicate_texts)
                 )
                 pdf.image(ngram_path, x=10, w=190)  # Increased width and adjusted x position
             

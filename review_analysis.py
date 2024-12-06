@@ -35,6 +35,7 @@ from gensim.models.ldamulticore import LdaMulticore
 from multiprocessing import cpu_count
 from configs.models import ModelConfig, DomainIndicators
 from gensim.models import CoherenceModel
+from tqdm import tqdm
 
 def initialize_nltk():
     """Initialize NLTK resources once at startup"""
@@ -75,22 +76,32 @@ def validate_sentiments_batch(data: List[Dict[str, Any]], domain: str, model_key
     validator = SentimentValidator(model_key=model_key)
     mismatches = []
     
-    for entry in data:
-        result = validator.validate_sentiment(
-            text=entry['text'],
-            labeled_sentiment=entry['sentiment'],
-            domain=domain
-        )
-        
-        if result['is_mismatch']:
-            mismatches.append({
-                'id': entry['id'],
-                'text': entry['text'],
-                'expected': entry['sentiment'],
-                'actual': result['predicted'],
-                'confidence': result['confidence']
+    logging.info(f"Starting sentiment validation for {len(data)} reviews...")
+    
+    with tqdm(total=len(data), desc="Validating sentiments") as pbar:
+        for entry in data:
+            result = validator.validate_sentiment(
+                text=entry['text'],
+                labeled_sentiment=entry['sentiment'],
+                domain=domain
+            )
+            
+            if result['is_mismatch']:
+                mismatches.append({
+                    'id': entry['id'],
+                    'text': entry['text'],
+                    'expected': entry['sentiment'],
+                    'actual': result['predicted'],
+                    'confidence': result['confidence']
+                })
+            
+            pbar.update(1)
+            pbar.set_postfix({
+                'mismatches': len(mismatches),
+                'current_id': entry['id']
             })
     
+    logging.info(f"Found {len(mismatches)} sentiment mismatches")
     return mismatches
 
 class ResourceManager:
@@ -448,46 +459,86 @@ def analyze_reviews_comprehensively(data):
     """
     Master analysis function combining topic modeling and linguistic quality assessment
     """
-  
-    topic_analyzer = SophisticatedTopicAnalyzer(
-    min_topics=2, 
-    max_topics=10, 
-        verbose=True  
-    )
+    reviews = data['generated_data']
+    texts = [review['text'] for review in reviews]
+    
+    # Initialize analyzers
+    similarity_analyzer = SophisticatedSimilarityAnalyzer()
+    topic_analyzer = SophisticatedTopicAnalyzer()
     linguistic_analyzer = SophisticatedLinguisticAnalyzer()
     
-    texts = [entry['text'] for entry in data]
+    # Analyze similarities and find duplicates
+    similarity_results = similarity_analyzer.analyze_similarity(texts)
     
+    # Create a set of indices to remove (duplicates)
+    indices_to_remove = set()
+    for group in similarity_results['similar_pairs']:
+        # Always keep the first review from each group, mark others as duplicates
+        if len(group) > 1:
+            # First review is kept, others are marked as duplicates
+            indices_to_remove.update(d['index'] for d in group[1:])
     
-    topic_analysis = topic_analyzer.analyze_topics(texts)
+    # Create cleaned data without duplicates
+    cleaned_reviews = [review for i, review in enumerate(reviews) if i not in indices_to_remove]
     
-    linguistic_analyses = []
-    for entry in data:
-        analysis = linguistic_analyzer.analyze_quality(entry['text'])
-        linguistic_analyses.append({
-            'id': entry['id'],
-            'analysis': analysis
-        })
+    # Update summary statistics
+    sentiment_counts = {'positive': 0, 'negative': 0, 'neutral': 0}
+    for review in cleaned_reviews:
+        sentiment_counts[review['sentiment']] += 1
+    
+    cleaned_data = {
+        'domain': data['domain'],
+        'generated_data': cleaned_reviews,
+        'summary': {
+            'total_generated': len(cleaned_reviews),
+            'sentiment_distribution': sentiment_counts,
+            'duplicates_removed': len(indices_to_remove)
+        }
+    }
+    
+    # Save cleaned data to JSON
+    cleaned_json_path = os.path.join(REPORT_FOLDER, 'cleaned_reviews.json')
+    with open(cleaned_json_path, 'w', encoding='utf-8') as f:
+        json.dump(cleaned_data, f, indent=2, ensure_ascii=False)
+    
+    # Continue with other analyses
+    topic_results = topic_analyzer.analyze_topics(texts)
+    linguistic_results = linguistic_analyzer.analyze_quality(texts)
+    ngram_diversity = analyze_ngram_diversity(texts)
     
     return {
-        'topic_analysis': topic_analysis,
-        'linguistic_analyses': linguistic_analyses
+        'similarity_analysis': similarity_results,
+        'topic_analysis': topic_results,
+        'linguistic_analysis': linguistic_results,
+        'ngram_diversity': ngram_diversity,
+        'cleaned_data_path': cleaned_json_path
     }
 
 def main():
     """Main execution function"""
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler(os.path.join(REPORT_FOLDER, 'analysis.log'))
+        ]
+    )
+    
+    # Parse arguments and process files
     args = parse_arguments()
     
     # Handle --list-models flag
     if args.list_models:
         models = SentimentValidator.list_available_models()
-        print("\nAvailable sentiment analysis models:")
+        logging.info("\nAvailable sentiment analysis models:")
         for key, description in models.items():
-            print(f"  {key}: {description}")
+            logging.info(f"  {key}: {description}")
         return
-
-    # Initialize NLTK resources
-    initialize_nltk()
+    
+    # Create necessary folders
+    os.makedirs(REPORT_FOLDER, exist_ok=True)
     
     # Domain override warning
     if args.domain:
@@ -498,57 +549,171 @@ def main():
         )
         user_input = input("Do you want to continue? (y/n): ").lower()
         if user_input != 'y':
-            print("Operation aborted.")
+            logging.info("Operation aborted by user")
             return
     
+    # Initialize NLTK resources
+    initialize_nltk()
+    
     try:
-        input_folder = Path(GENERATED_DATA_FOLDER)
-        output_folder = Path(REPORT_FOLDER)
-        output_folder.mkdir(parents=True, exist_ok=True)
-        
         # Show domain summary
-        print("\nFile Domain Summary:")
-        json_files = list(input_folder.glob('*.json'))
+        logging.info("\nFile Domain Summary:")
+        json_files = list(Path(GENERATED_DATA_FOLDER).glob('*.json'))
         for file_path in json_files:
             domain = get_file_domain(file_path)
             will_process = should_process_file(file_path, args)
             status = "WILL PROCESS" if will_process else "SKIPPED"
-            print(f"  - {file_path.name}: {domain} [{status}]")
-        print()
+            logging.info(f"  - {file_path.name}: {domain} [{status}]")
         
         # Process files
         processed_count = 0
         for file_path in json_files:
             if not should_process_file(file_path, args):
                 continue
-                
+            
             try:
+                logging.info(f"\nProcessing file: {file_path.name}")
                 results = process_file(file_path, args.model, args.domain)
                 
-                # Generate report name
-                report_name = f"analysis_report_{file_path.stem}_{args.model}.pdf"
-                report_path = output_folder / report_name
-                
-                # Generate PDF report
-                generate_pdf_report(
-                    file_name=str(report_path),
-                    report=results,
-                    duplicates=results['duplicates'],
-                    sentiment_mismatches=results['sentiment_mismatches'],
-                    similarity_pairs=results['similarity']
+                # Calculate quality metrics for the report
+                quality_metrics = {
+                    'total_reviews': results['stats']['total_reviews'],  
+                    'average_linguistic_quality': results['stats']['average_linguistic_quality'],
+                    'topic_diversity': results['stats']['topic_diversity'],
+                    'topic_coherence_cv': results['stats']['topic_coherence_cv'],
+                    'topic_coherence_umass': results['stats']['topic_coherence_umass'],
+                    'sentiment_confidence': results['stats']['sentiment_confidence']
+                }
+
+                # Generate the analysis report
+                report_file_path = os.path.join(
+                    REPORT_FOLDER,
+                    f"analysis_report_{file_path.stem}_{args.model}.pdf"
                 )
-                print(f"Report generated: {report_path}")
+                
+                generate_pdf_report(
+                    report_file_path,
+                    quality_metrics,
+                    results['duplicates'],
+                    results['sentiment_mismatches'],
+                    results['similarity']
+                )
+                logging.info(f"Report generated: {report_file_path}")
                 processed_count += 1
                 
             except Exception as e:
-                logging.error(f"Error processing file {file_path}: {str(e)}")
+                logging.error(f"Error processing {file_path}: {str(e)}", exc_info=True)
                 continue
         
-        print(f"\nProcessing complete. {processed_count} file(s) processed.")
+        logging.info(f"\nProcessing complete. {processed_count} file(s) processed.")
                 
     except Exception as e:
-        logging.error(f"Error in main execution: {str(e)}")
+        logging.error(f"Error in main execution: {str(e)}", exc_info=True)
         sys.exit(1)
+
+def process_file(file_path: Path, model: str, domain_override: str = None) -> Dict:
+    """Process a single file and generate analysis results."""
+    logging.info(f"Loading data from {file_path}")
+    with open(file_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    
+    reviews = data.get('generated_data', [])
+    if not reviews:
+        raise ValueError("No reviews found in the input file")
+    
+    logging.info(f"Loaded {len(reviews)} reviews")
+    
+    # Extract just the text from each review for similarity analysis
+    review_texts = [review['text'] for review in reviews]
+    
+    # Initialize analyzers
+    similarity_analyzer = SophisticatedSimilarityAnalyzer()
+    sentiment_validator = SentimentValidator(model)
+    
+    # Find duplicates and similar reviews
+    similarity_results = similarity_analyzer.analyze_similarity(review_texts)
+    exact_duplicates = similarity_results['exact_duplicates']
+    similar_pairs = similarity_results['similar_pairs']
+    
+    # Get sentiment mismatches
+    sentiment_mismatches = sentiment_validator.validate_sentiments_batch(reviews, domain_override)
+    
+    # Create cleaned dataset without duplicates or very similar reviews
+    cleaned_reviews = []
+    duplicate_indices = set()
+    
+    # Add indices from exact duplicate groups (keeping first from each group)
+    for group in exact_duplicates:
+        # Keep the first review from each group, mark others as duplicates
+        if len(group) > 1:
+            # First review is kept, others are marked as duplicates
+            duplicate_indices.update(d['index'] for d in group[1:])
+    
+    # Add indices from similar pairs (keeping first from each pair)
+    for pair in similar_pairs:
+        # Always keep the first review in the pair, remove the second
+        duplicate_indices.add(pair['index2'])
+    
+    logging.info(f"Removing {len(duplicate_indices)} reviews marked as duplicates or too similar")
+    
+    # Create cleaned dataset
+    for i, review in enumerate(reviews):
+        if i not in duplicate_indices:
+            # Create a new review dict with re-enumerated ID
+            new_review = review.copy()
+            new_review['id'] = len(cleaned_reviews) + 1  # Start IDs from 1
+            cleaned_reviews.append(new_review)
+    
+    # Calculate sentiment distribution for cleaned reviews
+    sentiment_dist = {
+        'positive': sum(1 for r in cleaned_reviews if r.get('sentiment') == 'positive'),
+        'negative': sum(1 for r in cleaned_reviews if r.get('sentiment') == 'negative'),
+        'neutral': sum(1 for r in cleaned_reviews if r.get('sentiment') == 'neutral')
+    }
+    
+    # Save cleaned dataset with proper structure
+    cleaned_data = {
+        'domain': domain_override or data.get('domain', ''),
+        'generated_data': cleaned_reviews,
+        'summary': {
+            'total_generated': len(cleaned_reviews),
+            'sentiment_distribution': sentiment_dist,
+            'duplicates_removed': len(reviews) - len(cleaned_reviews),
+            'similar_pairs_found': len(similar_pairs)
+        }
+    }
+    
+    cleaned_file_path = os.path.join(
+        REPORT_FOLDER, 
+        f"cleaned_{file_path.stem}_{model}.json"
+    )
+    with open(cleaned_file_path, 'w', encoding='utf-8') as f:
+        json.dump(cleaned_data, f, indent=2)
+    
+    logging.info(f"Saved cleaned dataset with {len(cleaned_reviews)} reviews to: {cleaned_file_path}")
+    
+    # Save sentiment mismatches to a separate file for reference
+    sm_file_path = os.path.join(
+        REPORT_FOLDER,
+        f"SM_analysis_report_{file_path.stem}_{model}.json"
+    )
+    with open(sm_file_path, 'w', encoding='utf-8') as f:
+        json.dump(sentiment_mismatches, f, indent=2)
+    logging.info(f"Saved sentiment mismatches to: {sm_file_path}")
+    
+    return {
+        'duplicates': exact_duplicates,
+        'sentiment_mismatches': sentiment_mismatches,
+        'similarity': similar_pairs,
+        'stats': {
+            'total_reviews': len(reviews),
+            'average_linguistic_quality': 0.0,  # TODO: Implement linguistic quality analysis
+            'topic_diversity': 0.0,  # TODO: Implement topic diversity analysis
+            'topic_coherence_cv': 0.0,  # TODO: Implement topic coherence analysis
+            'topic_coherence_umass': 0.0,
+            'sentiment_confidence': sum(m['confidence'] for m in sentiment_mismatches) / len(sentiment_mismatches) if sentiment_mismatches else 0.0
+        }
+    }
 
 if __name__ == "__main__":
     main()

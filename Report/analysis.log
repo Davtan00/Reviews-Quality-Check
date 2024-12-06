@@ -1,0 +1,99 @@
+2024-12-06 20:07:38,514 - INFO - 
+File Domain Summary:
+2024-12-06 20:07:38,536 - INFO -   - Tech10k.json: technology [WILL PROCESS]
+2024-12-06 20:07:38,536 - INFO - 
+Processing file: Tech10k.json
+2024-12-06 20:07:38,536 - INFO - Loading data from Generated Data\Tech10k.json
+2024-12-06 20:07:38,552 - INFO - Loaded 10000 reviews
+2024-12-06 20:07:38,552 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-06 20:07:38,837 - INFO - Use pytorch device: cpu
+2024-12-06 20:07:38,838 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-06 20:07:40,359 - INFO - Performing exact matching for short texts...
+2024-12-06 20:09:12,044 - INFO - Processing similarity matrices...
+2024-12-06 20:14:22,961 - INFO - Saved tiered similarity analysis to: similarity_tiers_20241206_201422.json
+2024-12-06 20:14:22,963 - INFO - Validating sentiments for 10000 reviews...
+2024-12-06 20:19:38,554 - INFO - Found 231 sentiment mismatches
+2024-12-06 20:19:38,557 - ERROR - Error processing Generated Data\Tech10k.json: 'int' object is not subscriptable
+Traceback (most recent call last):
+  File "C:\Users\David\Desktop\collectiongpt4o\Reviews-Quality-Check\review_analysis.py", line 574, in main
+    results = process_file(file_path, args.model, args.domain)
+  File "C:\Users\David\Desktop\collectiongpt4o\Reviews-Quality-Check\review_analysis.py", line 647, in process_file
+    duplicate_indices.update(d['index'] for d in group[1:])
+  File "C:\Users\David\Desktop\collectiongpt4o\Reviews-Quality-Check\review_analysis.py", line 647, in <genexpr>
+    duplicate_indices.update(d['index'] for d in group[1:])
+TypeError: 'int' object is not subscriptable
+2024-12-06 20:19:38,588 - INFO - 
+Processing complete. 0 file(s) processed.
+2024-12-06 20:25:35,391 - INFO - 
+File Domain Summary:
+2024-12-06 20:25:35,409 - INFO -   - Tech10k.json: technology [WILL PROCESS]
+2024-12-06 20:25:35,410 - INFO - 
+Processing file: Tech10k.json
+2024-12-06 20:25:35,410 - INFO - Loading data from Generated Data\Tech10k.json
+2024-12-06 20:25:35,425 - INFO - Loaded 10000 reviews
+2024-12-06 20:25:35,425 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-06 20:25:35,716 - INFO - Use pytorch device: cpu
+2024-12-06 20:25:35,717 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-06 20:25:36,713 - INFO - Performing exact matching for short texts...
+2024-12-06 20:27:08,823 - INFO - Processing similarity matrices...
+2024-12-06 20:32:19,756 - INFO - Saved tiered similarity analysis to: similarity_tiers_20241206_203219.json
+2024-12-06 20:32:19,758 - INFO - Validating sentiments for 10000 reviews...
+2024-12-06 20:37:37,993 - INFO - Found 231 sentiment mismatches
+2024-12-06 20:37:37,998 - ERROR - Error processing Generated Data\Tech10k.json: tuple indices must be integers or slices, not str
+Traceback (most recent call last):
+  File "C:\Users\David\Desktop\collectiongpt4o\Reviews-Quality-Check\review_analysis.py", line 574, in main
+    results = process_file(file_path, args.model, args.domain)
+  File "C:\Users\David\Desktop\collectiongpt4o\Reviews-Quality-Check\review_analysis.py", line 653, in process_file
+    duplicate_indices.add(pair['index2'])
+TypeError: tuple indices must be integers or slices, not str
+2024-12-06 20:37:38,032 - INFO - 
+Processing complete. 0 file(s) processed.
+2024-12-06 20:43:15,447 - INFO - 
+File Domain Summary:
+2024-12-06 20:43:15,467 - INFO -   - Tech10k.json: technology [WILL PROCESS]
+2024-12-06 20:43:15,467 - INFO - 
+Processing file: Tech10k.json
+2024-12-06 20:43:15,467 - INFO - Loading data from Generated Data\Tech10k.json
+2024-12-06 20:43:15,483 - INFO - Loaded 10000 reviews
+2024-12-06 20:43:15,484 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-06 20:43:15,785 - INFO - Use pytorch device: cpu
+2024-12-06 20:43:15,785 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-06 20:43:16,341 - INFO - Performing exact matching for short texts...
+2024-12-06 20:44:46,298 - INFO - Processing similarity matrices...
+2024-12-06 20:49:53,643 - INFO - Saved tiered similarity analysis to: similarity_tiers_20241206_204953.json
+2024-12-06 20:49:53,645 - INFO - Validating sentiments for 10000 reviews...
+2024-12-06 20:55:10,023 - INFO - Found 231 sentiment mismatches
+2024-12-06 20:55:10,026 - INFO - Removing 53 reviews marked as duplicates or too similar
+2024-12-06 20:55:10,091 - INFO - Saved cleaned dataset with 9947 reviews to: Report\cleaned_Tech10k_distilbert-sst2.json
+2024-12-06 20:55:10,097 - INFO - Saved sentiment mismatches to: Report\SM_analysis_report_Tech10k_distilbert-sst2.json
+2024-12-06 20:55:10,134 - ERROR - Error processing Generated Data\Tech10k.json: object of type 'int' has no len()
+Traceback (most recent call last):
+  File "C:\Users\David\Desktop\collectiongpt4o\Reviews-Quality-Check\review_analysis.py", line 580, in main
+    'total_reviews': len(results['stats']['total_reviews']),
+TypeError: object of type 'int' has no len()
+2024-12-06 20:55:10,135 - INFO - 
+Processing complete. 0 file(s) processed.
+2024-12-06 21:10:22,302 - INFO - 
+File Domain Summary:
+2024-12-06 21:10:22,329 - INFO -   - Tech10k.json: technology [WILL PROCESS]
+2024-12-06 21:10:22,330 - INFO - 
+Processing file: Tech10k.json
+2024-12-06 21:10:22,330 - INFO - Loading data from Generated Data\Tech10k.json
+2024-12-06 21:10:22,355 - INFO - Loaded 10000 reviews
+2024-12-06 21:10:22,357 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-06 21:10:22,761 - INFO - Use pytorch device: cpu
+2024-12-06 21:10:22,761 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-06 21:10:23,468 - INFO - Performing exact matching for short texts...
+2024-12-06 21:12:18,521 - INFO - Processing similarity matrices...
+2024-12-06 21:17:36,862 - INFO - Saved tiered similarity analysis to: similarity_tiers_20241206_211736.json
+2024-12-06 21:17:36,865 - INFO - Validating sentiments for 10000 reviews...
+2024-12-06 21:22:49,836 - INFO - Found 231 sentiment mismatches
+2024-12-06 21:22:49,839 - INFO - Removing 53 reviews marked as duplicates or too similar
+2024-12-06 21:22:49,892 - INFO - Saved cleaned dataset with 9947 reviews to: Report\cleaned_Tech10k_distilbert-sst2.json
+2024-12-06 21:22:49,898 - INFO - Saved sentiment mismatches to: Report\SM_analysis_report_Tech10k_distilbert-sst2.json
+2024-12-06 21:22:49,934 - INFO - Saved sentiment mismatches to: Report\SM_analysis_report_Tech10k_distilbert-sst2.json
+2024-12-06 21:22:50,799 - INFO - Starting ngram analysis with 28 texts
+2024-12-06 21:22:51,422 - INFO - Successfully generated PDF report: Report\analysis_report_Tech10k_distilbert-sst2.pdf
+2024-12-06 21:22:51,423 - INFO - Report generated: Report\analysis_report_Tech10k_distilbert-sst2.pdf
+2024-12-06 21:22:51,423 - INFO - 
+Processing complete. 1 file(s) processed.

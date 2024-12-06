@@ -191,6 +191,43 @@ class SentimentValidator:
                 
         return False
 
+    def _check_neutral_indicators(self, text: str) -> Dict[str, bool]:
+        """
+        Check for various indicators of neutral sentiment in the text.
+        """
+        text = text.lower()
+        words = set(word_tokenize(text))
+        
+        indicators = {
+            'has_contrast_markers': bool(words.intersection(self.contrast_markers)),
+            'has_neutral_words': bool(words.intersection(self.neutral_indicators)),
+            'has_balanced_opinion': any(re.search(pattern, text) for pattern in [
+                r'(?i)(while|although|however).*but',
+                r'(?i)on(\s+the)?\s+one\s+hand.*on(\s+the)?\s+other(\s+hand)?',
+                r'(?i)pros.*cons',
+                r'(?i)advantages.*disadvantages'
+            ]),
+            'has_moderate_intensity': any(re.search(pattern, text) for pattern in [
+                r'(?i)(somewhat|fairly|relatively|quite|rather)\s\w+',
+                r'(?i)not\s+(too|very|that|particularly|especially)\s+\w+',
+                r'(?i)(good|bad)\s+enough'
+            ]),
+            'has_comparison': bool(re.search(
+                r'(?i)(compared|relative|versus|vs|than).*(?:other|previous|similar|different)',
+                text
+            ))
+        }
+        
+        # Add detailed pattern matches
+        for pattern_name, pattern in self.neutral_patterns.items():
+            indicators[f'matches_{pattern_name}'] = bool(re.search(pattern, text))
+        
+        # Calculate overall neutral likelihood
+        neutral_signals = sum(1 for v in indicators.values() if v)
+        indicators['strong_neutral_indication'] = neutral_signals >= 2
+        
+        return indicators
+
     def _get_confidence_threshold(self, sentiment_type: str) -> float:
         """
         Get confidence threshold for a specific sentiment type.
@@ -236,12 +273,22 @@ class SentimentValidator:
 
     def validate_sentiment(self, text: str, labeled_sentiment: str, domain: str = None):
         """Enhanced sentiment validation with model-specific handling"""
+        logging.debug(f"Starting sentiment validation for text: {text[:100]}...")
+        
+        # Check domain indicators
+        logging.debug("Checking domain indicators...")
         domain_sentiment = self._check_domain_indicators(text, domain)
+        if domain_sentiment['has_indicators']:
+            logging.debug(f"Found domain indicators: {domain_sentiment['indicator_counts']}")
         
         # Get context analysis
+        logging.debug("Analyzing context...")
         context = self._analyze_context(text)
+        if context['has_contrast']:
+            logging.debug("Found contrasting statements in text")
         
         # Get model prediction
+        logging.debug("Running model prediction...")
         inputs = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
         outputs = self.model(**inputs)
         probs = outputs.logits.softmax(dim=-1)
@@ -252,15 +299,23 @@ class SentimentValidator:
         prediction = self._map_model_output(predicted_class, confidence)
         predicted_sentiment = prediction['sentiment']
         confidence = prediction['confidence']
+        logging.debug(f"Initial model prediction: {predicted_sentiment} (confidence: {confidence:.3f})")
         
         # Apply neutral detection logic
+        logging.debug("Checking for neutral indicators...")
         has_neutral_indicators = any(indicator in text.lower() for indicator in self.neutral_indicators)
         has_neutral_patterns = self._detect_neutral_patterns(text)
+        
+        if has_neutral_indicators:
+            logging.debug("Found neutral indicators in text")
+        if has_neutral_patterns:
+            logging.debug("Found neutral patterns in text")
         
         # Determine predicted sentiment with neutral consideration
         if has_neutral_indicators or has_neutral_patterns:
             predicted_sentiment = "neutral"
             confidence = self._adjust_confidence_for_neutral(confidence, context, text)
+            logging.debug(f"Adjusted to neutral sentiment (confidence: {confidence:.3f})")
         
         # Determine if there's a mismatch using dynamic thresholds
         is_mismatch = False
@@ -274,7 +329,10 @@ class SentimentValidator:
             is_mismatch = (predicted_sentiment != labeled_sentiment and 
                           confidence >= threshold)
         
-        return {
+        if is_mismatch:
+            logging.info(f"Found sentiment mismatch - Labeled: {labeled_sentiment}, Predicted: {predicted_sentiment} (confidence: {confidence:.3f})")
+        
+        result = {
             'is_mismatch': is_mismatch,
             'predicted': predicted_sentiment,
             'confidence': confidence,
@@ -284,6 +342,136 @@ class SentimentValidator:
             'model_type': self.model_type,
             'model_name': self.model_config['name']
         }
+        
+        logging.debug("Sentiment validation completed")
+        return result
+
+    def validate_sentiments_batch(self, reviews: List[Dict], domain_override: str = None) -> List[Dict]:
+        """
+        Validate sentiments for a batch of reviews.
+        
+        Args:
+            reviews: List of review dictionaries with 'text' and 'sentiment' keys
+            domain_override: Optional domain override
+            
+        Returns:
+            List of mismatched reviews with predicted sentiments
+        """
+        mismatches = []
+        total = len(reviews)
+        batch_size = 32  # Process in smaller batches to show more frequent progress
+        
+        logging.info(f"Validating sentiments for {total} reviews...")
+        
+        try:
+            from tqdm import tqdm
+            with tqdm(total=total, desc="Validating sentiments") as pbar:
+                for i in range(0, total, batch_size):
+                    batch = reviews[i:i + batch_size]
+                    
+                    for review in batch:
+                        try:
+                            text = review['text']
+                            original_sentiment = review['sentiment']
+                            
+                            # Get model prediction
+                            inputs = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
+                            outputs = self.model(**inputs)
+                            predicted_class = outputs.logits.argmax().item()
+                            confidence = outputs.logits.softmax(dim=1).max().item()
+                            
+                            # Map to standard sentiment format
+                            prediction = self._map_model_output(predicted_class, confidence)
+                            predicted_sentiment = prediction['sentiment']
+                            confidence = prediction['confidence']
+                            
+                            # Check domain-specific indicators
+                            domain_check = self._check_domain_indicators(text, domain_override)
+                            
+                            # Check for neutral indicators
+                            neutral_check = self._check_neutral_indicators(text)
+                            
+                            # Adjust confidence based on neutral indicators
+                            if neutral_check['strong_neutral_indication'] and predicted_sentiment != 'neutral':
+                                confidence *= 0.8  # Reduce confidence if strong neutral indicators present
+                            
+                            # If confidence is high enough and sentiments don't match
+                            threshold = self.confidence_thresholds.get(
+                                predicted_sentiment, 
+                                self.confidence_thresholds['default']
+                            )
+                            
+                            if confidence > threshold and predicted_sentiment != original_sentiment:
+                                mismatch = {
+                                    'text': text,
+                                    'original_sentiment': original_sentiment,
+                                    'predicted_sentiment': predicted_sentiment,
+                                    'confidence': confidence,
+                                    'domain_indicators': domain_check,
+                                    'neutral_indicators': neutral_check
+                                }
+                                mismatches.append(mismatch)
+                                
+                        except Exception as e:
+                            logging.warning(f"Error processing review: {str(e)}")
+                            continue
+                            
+                        pbar.update(1)
+                        
+        except ImportError:
+            # Fallback if tqdm is not available
+            for i, review in enumerate(reviews):
+                if (i + 1) % 100 == 0:
+                    logging.info(f"Processed {i + 1}/{total} reviews")
+                    
+                try:
+                    text = review['text']
+                    original_sentiment = review['sentiment']
+                    
+                    # Get model prediction
+                    inputs = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
+                    outputs = self.model(**inputs)
+                    predicted_class = outputs.logits.argmax().item()
+                    confidence = outputs.logits.softmax(dim=1).max().item()
+                    
+                    # Map to standard sentiment format
+                    prediction = self._map_model_output(predicted_class, confidence)
+                    predicted_sentiment = prediction['sentiment']
+                    confidence = prediction['confidence']
+                    
+                    # Check domain-specific indicators
+                    domain_check = self._check_domain_indicators(text, domain_override)
+                    
+                    # Check for neutral indicators
+                    neutral_check = self._check_neutral_indicators(text)
+                    
+                    # Adjust confidence based on neutral indicators
+                    if neutral_check['strong_neutral_indication'] and predicted_sentiment != 'neutral':
+                        confidence *= 0.8  # Reduce confidence if strong neutral indicators present
+                    
+                    # If confidence is high enough and sentiments don't match
+                    threshold = self.confidence_thresholds.get(
+                        predicted_sentiment, 
+                        self.confidence_thresholds['default']
+                    )
+                    
+                    if confidence > threshold and predicted_sentiment != original_sentiment:
+                        mismatch = {
+                            'text': text,
+                            'original_sentiment': original_sentiment,
+                            'predicted_sentiment': predicted_sentiment,
+                            'confidence': confidence,
+                            'domain_indicators': domain_check,
+                            'neutral_indicators': neutral_check
+                        }
+                        mismatches.append(mismatch)
+                        
+                except Exception as e:
+                    logging.warning(f"Error processing review: {str(e)}")
+                    continue
+        
+        logging.info(f"Found {len(mismatches)} sentiment mismatches")
+        return mismatches
 
     @classmethod
     def list_available_models(cls) -> Dict[str, str]:

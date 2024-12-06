@@ -8,9 +8,17 @@ GENERATED_DATA_FOLDER = "Generated Data"
 REPORT_FOLDER = "Report"
 
 # Analysis Thresholds
-SIMILARITY_THRESHOLD = 0.85  # Threshold for detecting similar reviews
+SIMILARITY_THRESHOLD = 0.92  # Threshold for detecting similar reviews
 SENTIMENT_CONFIDENCE_THRESHOLD = 0.92  # Threshold for sentiment validation confidence
 LINGUISTIC_QUALITY_THRESHOLD = 0.70  # Minimum acceptable linguistic quality score
+
+# Similarity Analysis Features
+ENABLE_TIERED_SIMILARITY = True  # Feature flag for tiered similarity analysis
+SIMILARITY_TIERS = {
+    'tier1': 0.92,  # Exact or near-exact matches
+    'tier2': 0.86,  # Very similar content
+    'tier3': 0.80   # Moderately similar content
+}
 
 # Topic Analysis Configuration
 MIN_TOPICS = 2  # Minimum number of topics to consider
@@ -120,6 +128,10 @@ def get_config() -> Dict[str, Any]:
         'similarity_threshold': SIMILARITY_THRESHOLD,
         'sentiment_confidence_threshold': SENTIMENT_CONFIDENCE_THRESHOLD,
         'linguistic_quality_threshold': LINGUISTIC_QUALITY_THRESHOLD,
+        
+        # Similarity Analysis Features
+        'enable_tiered_similarity': ENABLE_TIERED_SIMILARITY,
+        'similarity_tiers': SIMILARITY_TIERS,
         
         # Topic Analysis
         'min_topics': MIN_TOPICS,
