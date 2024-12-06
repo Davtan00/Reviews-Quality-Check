@@ -22,14 +22,17 @@ def managed_temp_directory():
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 def generate_pdf_report(
-    file_name: str,          # Output PDF path
-    report: Dict,            # Analysis results including metrics and statistics
-    duplicates: List[Dict],  # List of identified duplicate reviews
-    sentiment_mismatches: List[Dict],  # Reviews with sentiment analysis discrepancies
-    similarity_pairs: List[Dict]       # Highly similar review pairs
+    output_path: str,
+    analysis_results: Dict,
+    original_data: List[Dict],
+    duplicates: List[Dict],
+    sentiment_mismatches: List[Dict],
+    similarity_analysis: Dict
 ) -> None:
-    """Generate a structured PDF report with analysis results and visualizations"""
-    
+    """
+    Generate a comprehensive PDF report containing all analysis results.
+    All visualizations are generated and embedded directly in the PDF.
+    """
     with managed_temp_directory() as temp_dir:
         try:
             # Initialize visualization and statistical analyzers
@@ -37,128 +40,126 @@ def generate_pdf_report(
             stat_analyzer = StatisticalAnalyzer()
             
             pdf = FPDF()
-            pdf.set_auto_page_break(auto=True, margin=10)
             pdf.add_page()
             
-            # Main title
+            # Title
             pdf.set_font("Arial", size=16, style='B')
-            main_title = "Analysis Report"
-            main_title_w = pdf.get_string_width(main_title)
-            page_w = pdf.w - 2 * PDF_MARGIN
-            pdf.set_x((page_w - main_title_w) / 2 + PDF_MARGIN)
-            pdf.cell(main_title_w, 10, main_title, ln=True, align='C')
+            pdf.cell(0, 10, "Review Quality Analysis Report", ln=True, align='C')
+            pdf.ln(10)
             
-            # Subtitle (filename without extension)
-            clean_filename = sanitize_text(Path(file_name).stem)
-            pdf.set_font("Arial", size=10)
-            pdf.ln(2)
-            subtitle_w = pdf.get_string_width(clean_filename)
-            pdf.set_x((page_w - subtitle_w) / 2 + PDF_MARGIN)
-            pdf.cell(subtitle_w, 6, clean_filename, ln=True, align='C')
-            pdf.ln(4)
-
             # Two-column layout for metrics
-            col_width = page_w / 2
+            col_width = (pdf.w - 2 * PDF_MARGIN) / 2
             
             # Left column - Basic Statistics
-            pdf.set_font("Arial", size=10, style='B')
+            pdf.set_font("Arial", size=12, style='B')
             pdf.set_x(PDF_MARGIN)
-            pdf.cell(col_width, 6, "Basic Statistics", ln=True)
-            pdf.set_font("Arial", size=9)
+            pdf.cell(col_width, 10, "Basic Statistics", ln=True)
+            pdf.set_font("Arial", size=10)
             
             stats = [
-                ("Total Reviews", report.get('total_reviews', 0)),
-                ("Duplicates Found", sum(len(group) - 1 for group in duplicates)),  
-                ("Similar Pairs", len(similarity_pairs)),
-                ("Sentiment Mismatches", len(sentiment_mismatches)),
-                ("Reviews After Cleaning", report.get('total_reviews', 0) - 
-                    (sum(len(group) - 1 for group in duplicates) + len(similarity_pairs)))
+                ("Total Original Reviews", len(original_data)),
+                ("Reviews After Cleaning", len(original_data) - similarity_analysis['total_removed']),
+                ("Semantic Duplicates", len(similarity_analysis['semantic_duplicates'])),
+                ("Combined Duplicates", len(similarity_analysis['combined_duplicates'])),
+                ("Structural Similarities", len(similarity_analysis['structural_similars'])),
+                ("Sentiment Mismatches", len(sentiment_mismatches))
             ]
             
             for label, value in stats:
                 pdf.set_x(PDF_MARGIN)
-                pdf.cell(col_width, 5, f"{label}: {value}", ln=True)
+                pdf.cell(col_width, 8, f"{label}: {value}", ln=True)
             
             # Right column - Quality Metrics
             y_position = pdf.get_y()
-            pdf.set_xy(PDF_MARGIN + col_width, y_position - (len(stats) * 5))
-            pdf.set_font("Arial", size=10, style='B')
-            pdf.cell(col_width, 6, "Quality Metrics", ln=True)
-            pdf.set_font("Arial", size=9)
+            pdf.set_xy(PDF_MARGIN + col_width, y_position - (len(stats) * 8))
+            pdf.set_font("Arial", size=12, style='B')
+            pdf.cell(col_width, 10, "Quality Metrics", ln=True)
+            pdf.set_font("Arial", size=10)
             
             metrics = [
-                ("Avg Linguistic Quality", f"{report.get('average_linguistic_quality', 0.0):.2f}"),
-                ("Topic Diversity", f"{report.get('topic_diversity', 0.0):.2f}"),
-                ("Topic Coherence (C_v)", f"{report.get('topic_coherence_cv', 0.0):.2f}"),
-                ("Topic Coherence (UMass)", f"{report.get('topic_coherence_umass', 0.0):.2f}"),
-                ("Avg Sentiment Confidence", f"{report.get('sentiment_confidence', 0.0):.2f}")
+                ("Avg Linguistic Quality", f"{analysis_results.get('linguistic_quality', 0.0):.2f}"),
+                ("Topic Diversity", f"{analysis_results.get('topic_diversity', 0.0):.2f}"),
+                ("Topic Coherence (C_v)", f"{analysis_results.get('topic_coherence_cv', 0.0):.2f}"),
+                ("Topic Coherence (UMass)", f"{analysis_results.get('topic_coherence_umass', 0.0):.2f}"),
+                ("Avg Sentiment Confidence", f"{analysis_results.get('sentiment_confidence', 0.0):.2f}")
             ]
             
             for label, value in metrics:
                 pdf.set_x(PDF_MARGIN + col_width)
-                pdf.cell(col_width, 5, f"{label}: {value}", ln=True)
+                pdf.cell(col_width, 8, f"{label}: {value}", ln=True)
             
-            # Text Diversity section below the columns
-            pdf.ln(6)
-            pdf.set_x(PDF_MARGIN)
-            pdf.set_font("Arial", size=10, style='B')
-            pdf.cell(0, 6, "Text Diversity", ln=True)
-            pdf.set_font("Arial", size=9)
+            # Visualizations
+            pdf.add_page()
+            pdf.set_font("Arial", size=12, style='B')
+            pdf.cell(0, 10, "Text Analysis Visualizations", ln=True)
             
-            diversity = [
-                ("Unigram Diversity", f"{report.get('unigram_diversity', 0.0):.2f}"),
-                ("Bigram Diversity", f"{report.get('bigram_diversity', 0.0):.2f}"),
-                ("Trigram Diversity", f"{report.get('trigram_diversity', 0.0):.2f}")
-            ]
-            
-            for label, value in diversity:
-                pdf.set_x(PDF_MARGIN)
-                pdf.cell(0, 5, f"{label}: {value}", ln=True)
-            
-            # Visualizations section with larger images
-            pdf.ln(6)
-            pdf.set_font("Arial", size=10, style='B')
-            pdf.cell(0, 6, "Visualizations", ln=True)
-            
-            # Add wordcloud if data exists
-            if duplicates or sentiment_mismatches:
-                # Extract texts properly based on data structure
-                texts = []
-                # For duplicates (list of groups), get text from each review in each group
-                for group in duplicates:
-                    texts.extend(item['text'] for item in group)
-                # For sentiment mismatches (list of dicts), get text directly
-                texts.extend(item['text'] for item in sentiment_mismatches)
-                
+            # Word Cloud
+            if original_data:
+                texts = [review['text'] for review in original_data]
                 wordcloud_path = viz_gen.generate_wordcloud(texts)
-                pdf.image(wordcloud_path, x=20, w=170)  # Increased width and adjusted x position
+                pdf.image(str(wordcloud_path), x=20, w=170)
             
-            # Add ngram plots side by side
-            if duplicates:
-                # Flatten duplicate groups and extract texts
-                duplicate_texts = []
-                for group in duplicates:
-                    duplicate_texts.extend(item['text'] for item in group)
-                ngram_path = viz_gen.generate_ngram_plot(
-                    stat_analyzer.analyze_ngrams(duplicate_texts)
-                )
-                pdf.image(ngram_path, x=10, w=190)  # Increased width and adjusted x position
+            # N-gram Analysis
+            if original_data:
+                texts = [review['text'] for review in original_data]
+                ngram_data = stat_analyzer.analyze_ngrams(texts)
+                ngram_path = viz_gen.generate_ngram_plot(ngram_data)
+                pdf.image(str(ngram_path), x=10, w=190)
             
-            if 'real_distribution' in report:
-                kl_div_path = viz_gen.generate_kl_divergence_plot(
-                    report['real_distribution'],
-                    report['synthetic_distribution'],
-                    report['kl_divergence']
+            # Sentiment Distribution
+            if 'sentiment_distribution' in analysis_results:
+                sentiment_path = viz_gen.generate_sentiment_distribution(
+                    analysis_results['sentiment_distribution'],
+                    [len(review['text']) for review in original_data]
                 )
-                pdf.image(kl_div_path, x=30, w=150)
+                pdf.image(str(sentiment_path), x=20, w=170)
+            
+            # Similarity Analysis
+            pdf.add_page()
+            pdf.set_font("Arial", size=12, style='B')
+            pdf.cell(0, 10, "Similarity Analysis", ln=True)
+            pdf.set_font("Arial", size=10)
+            
+            if similarity_analysis['semantic_duplicates']:
+                pdf.ln(5)
+                pdf.set_font("Arial", size=11, style='B')
+                pdf.cell(0, 10, "Example Semantic Duplicates:", ln=True)
+                pdf.set_font("Arial", size=9)
+                
+                for i, pair in enumerate(similarity_analysis['semantic_duplicates'][:3], 1):
+                    pdf.set_font("Arial", size=9, style='B')
+                    pdf.cell(0, 8, f"Pair {i}:", ln=True)
+                    pdf.set_font("Arial", size=9)
+                    pdf.multi_cell(0, 6, f"Review 1: {truncate_text(pair['text1'], MAX_TEXT_LENGTH)}")
+                    pdf.multi_cell(0, 6, f"Review 2: {truncate_text(pair['text2'], MAX_TEXT_LENGTH)}")
+                    pdf.cell(0, 6, f"Similarity Score: {pair['similarity']:.3f}", ln=True)
+                    pdf.ln(2)
+            
+            # Sentiment Mismatch Analysis
+            pdf.add_page()
+            pdf.set_font("Arial", size=12, style='B')
+            pdf.cell(0, 10, "Sentiment Mismatch Analysis", ln=True)
+            pdf.set_font("Arial", size=10)
+            
+            if sentiment_mismatches:
+                for i, mismatch in enumerate(sentiment_mismatches[:5], 1):
+                    pdf.ln(5)
+                    pdf.set_font("Arial", size=10, style='B')
+                    pdf.cell(0, 8, f"Example {i}:", ln=True)
+                    pdf.set_font("Arial", size=9)
+                    pdf.multi_cell(0, 6, f"Review: {truncate_text(mismatch['text'], MAX_TEXT_LENGTH)}")
+                    pdf.multi_cell(0, 6, f"Original Sentiment: {mismatch['original_sentiment']}")
+                    pdf.multi_cell(0, 6, f"Predicted Sentiment: {mismatch['predicted_sentiment']} (Confidence: {mismatch['confidence']:.3f})")
+                    if 'analysis_factors' in mismatch and 'explanation' in mismatch['analysis_factors']:
+                        pdf.multi_cell(0, 6, f"Explanation: {mismatch['analysis_factors']['explanation']}")
+                    pdf.ln(2)
             
             # Save the report
-            pdf.output(file_name)
-            logging.info(f"Successfully generated PDF report: {file_name}")
+            pdf.output(output_path)
+            logging.info(f"Successfully generated PDF report: {output_path}")
             
         except Exception as e:
             logging.error(f"Error generating PDF: {str(e)}")
-            logging.error(f"Current state - duplicates length: {len(duplicates)}")
             raise
 
 def truncate_text(text: str, max_length: int) -> str:

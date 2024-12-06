@@ -63,9 +63,9 @@ class SophisticatedSimilarityAnalyzer:
         """Process a batch of the similarity matrix with tiered analysis"""
         similar_pairs = []
         tiered_results = {
-            'tier1': [],
-            'tier2': [],
-            'tier3': []
+            'tier1': [],  # Embedding similarity > 0.98 (identical semantic content)
+            'tier2': [],  # Combined similarity > 0.92 (for deduplication)
+            'tier3': []   # N-gram similarity > 0.85 (structural similarity)
         }
         
         matrix_size = similarity_matrix.shape[0]
@@ -82,40 +82,35 @@ class SophisticatedSimilarityAnalyzer:
                     pbar.set_postfix({'comparisons': f"{comparison_count}/{comparisons_total}"}, refresh=True)
                 
                 if (global_i, global_j) not in duplicates:
-                    sim = float(similarity_matrix[i, j])
+                    embedding_sim = float(similarity_matrix[i, j])
                     ngram_sim = self.get_ngram_similarity(texts[global_i], texts[global_j])
-                    combined_sim = (sim + ngram_sim) / 2
+                    combined_sim = (embedding_sim + ngram_sim) / 2
                     
-                    # Regular similarity check for duplicates
-                    if combined_sim > SIMILARITY_THRESHOLD:
-                        similar_pair = {
-                            'index1': global_i,
-                            'index2': global_j,
-                            'text1': texts[global_i],
-                            'text2': texts[global_j],
-                            'similarity': combined_sim
-                        }
-                        similar_pairs.append(similar_pair)
+                    similarity_info = {
+                        'index1': global_i,
+                        'index2': global_j,
+                        'text1': texts[global_i],
+                        'text2': texts[global_j],
+                        'embedding_similarity': embedding_sim,
+                        'ngram_similarity': ngram_sim,
+                        'combined_similarity': combined_sim
+                    }
+                    
+                    # Check for semantic duplicates (embedding similarity)
+                    if embedding_sim >= self.similarity_tiers['tier1']:  # > 0.98
+                        tiered_results['tier1'].append(similarity_info)
+                        similar_pairs.append(similarity_info)
                         duplicates.add((global_i, global_j))
                     
-                    # Tiered analysis if enabled
-                    if self.enable_tiered_analysis:
-                        similarity_info = {
-                            'index1': global_i,
-                            'index2': global_j,
-                            'text1': texts[global_i],
-                            'text2': texts[global_j],
-                            'embedding_similarity': sim,
-                            'ngram_similarity': ngram_sim,
-                            'combined_similarity': combined_sim
-                        }
-                        
-                        if combined_sim >= self.similarity_tiers['tier1']:
-                            tiered_results['tier1'].append(similarity_info)
-                        elif combined_sim >= self.similarity_tiers['tier2']:
-                            tiered_results['tier2'].append(similarity_info)
-                        elif combined_sim >= self.similarity_tiers['tier3']:
-                            tiered_results['tier3'].append(similarity_info)
+                    # Check for combined similarity (deduplication)
+                    elif combined_sim >= self.similarity_tiers['tier2']:  # > 0.92
+                        tiered_results['tier2'].append(similarity_info)
+                        similar_pairs.append(similarity_info)
+                        duplicates.add((global_i, global_j))
+                    
+                    # Check for structural similarity (n-grams)
+                    elif ngram_sim >= self.similarity_tiers['tier3']:  # > 0.85
+                        tiered_results['tier3'].append(similarity_info)
         
         return similar_pairs, tiered_results
 
