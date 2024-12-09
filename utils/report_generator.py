@@ -148,8 +148,8 @@ def generate_pdf_report(
                     pdf.cell(0, 8, f"Example {i}:", ln=True)
                     pdf.set_font("Arial", size=9)
                     pdf.multi_cell(0, 6, f"Review: {truncate_text(mismatch['text'], MAX_TEXT_LENGTH)}")
-                    pdf.multi_cell(0, 6, f"Original Sentiment: {mismatch['original_sentiment']}")
-                    pdf.multi_cell(0, 6, f"Predicted Sentiment: {mismatch['predicted_sentiment']} (Confidence: {mismatch['confidence']:.3f})")
+                    pdf.multi_cell(0, 6, f"Original Sentiment: {mismatch.get('expected') or mismatch.get('original_sentiment')}")
+                    pdf.multi_cell(0, 6, f"Predicted Sentiment: {mismatch.get('actual') or mismatch.get('predicted_sentiment')} (Confidence: {mismatch['confidence']:.3f})")
                     if 'analysis_factors' in mismatch and 'explanation' in mismatch['analysis_factors']:
                         pdf.multi_cell(0, 6, f"Explanation: {mismatch['analysis_factors']['explanation']}")
                     pdf.ln(2)

@@ -3,6 +3,26 @@ from textblob import TextBlob
 from textstat import flesch_reading_ease, dale_chall_readability_score
 from nltk.tokenize import sent_tokenize
 import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
+
+try:
+    # Try loading the larger model first
+    nlp = spacy.load('en_core_web_md')  # Medium-sized model with word vectors
+except OSError:
+    print("Installing required model...")
+    from spacy.cli import download
+    download('en_core_web_md')
+    nlp = spacy.load('en_core_web_md')
+
+# Add a warning if falling back to small model
+def check_model_capabilities():
+    if not nlp.has_pipe('vectors'):
+        logger.warning(
+            "Using a model without word vectors. Consider using 'en_core_web_md' or 'en_core_web_lg' "
+            "for better similarity calculations."
+        )
 
 class SophisticatedLinguisticAnalyzer:
     def __init__(self):

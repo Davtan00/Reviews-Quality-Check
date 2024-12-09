@@ -47,7 +47,6 @@ class SophisticatedTopicAnalyzer:
                 and token.pos_ in {'NOUN', 'VERB', 'ADJ'}]  # Removed ADV for better topic focus
 
     def preprocess_text(self, texts: List[str]) -> List[List[str]]:
-        """Optimized batch processing with adaptive chunking"""
         if self.verbose:
             print("Starting text preprocessing...")
 

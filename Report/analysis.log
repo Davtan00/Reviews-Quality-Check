@@ -154,3 +154,64 @@ File Domain Summary:
 2024-12-06 23:29:40,799 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
 2024-12-06 23:29:41,424 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
 2024-12-06 23:29:41,604 - INFO - Use pytorch device: cpu
+2024-12-07 15:30:16,219 - INFO - 
+File Domain Summary:
+2024-12-07 15:30:16,233 - INFO -   - combined_reviews.json: ecommerce [WILL PROCESS]
+2024-12-07 15:30:16,234 - INFO - Processing Generated Data\combined_reviews.json...
+2024-12-07 15:30:16,248 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-07 15:30:17,182 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-07 15:30:17,555 - INFO - Use pytorch device: cpu
+2024-12-07 15:48:42,048 - INFO - 
+File Domain Summary:
+2024-12-07 15:48:42,062 - INFO -   - combined_reviews.json: ecommerce [WILL PROCESS]
+2024-12-07 15:48:42,062 - INFO - Processing Generated Data\combined_reviews.json...
+2024-12-07 15:48:42,077 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-07 15:48:42,722 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-07 15:48:42,932 - INFO - Use pytorch device: cpu
+2024-12-08 21:44:18,856 - INFO - 
+File Domain Summary:
+2024-12-08 21:44:18,949 - INFO -   - combined_reviews_hc.json: healthcare [WILL PROCESS]
+2024-12-08 21:44:18,950 - INFO - Processing Generated Data\combined_reviews_hc.json...
+2024-12-08 21:44:19,051 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-08 21:44:19,910 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-08 21:44:20,310 - INFO - Use pytorch device: cpu
+2024-12-08 21:45:57,726 - INFO - 
+File Domain Summary:
+2024-12-08 21:45:57,821 - INFO -   - combined_reviews_hc.json: healthcare [WILL PROCESS]
+2024-12-08 21:45:57,821 - INFO - Processing Generated Data\combined_reviews_hc.json...
+2024-12-08 21:45:57,926 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-08 21:45:58,528 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-08 21:45:58,778 - INFO - Use pytorch device: cpu
+2024-12-08 21:52:38,368 - INFO - 
+File Domain Summary:
+2024-12-08 21:52:38,464 - INFO -   - combined_reviews_hc.json: healthcare [WILL PROCESS]
+2024-12-08 21:52:38,464 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-08 21:52:39,060 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-08 21:52:39,327 - INFO - Use pytorch device: cpu
+2024-12-08 21:53:38,343 - INFO - 
+File Domain Summary:
+2024-12-08 21:53:38,442 - INFO -   - combined_reviews_hc.json: healthcare [WILL PROCESS]
+2024-12-08 21:53:38,442 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-08 21:53:39,058 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-08 21:53:39,329 - INFO - Use pytorch device: cpu
+2024-12-09 13:43:55,266 - INFO - 
+File Domain Summary:
+2024-12-09 13:43:55,270 - INFO -   - test5k.json: unknown [WILL PROCESS]
+2024-12-09 13:43:55,270 - INFO - Processing Generated Data\test5k.json...
+2024-12-09 13:43:55,273 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-09 13:43:56,129 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-09 13:43:56,457 - INFO - Use pytorch device: cpu
+2024-12-09 18:30:34,290 - INFO - 
+File Domain Summary:
+2024-12-09 18:30:34,293 - INFO -   - test5k.json: unknown [WILL PROCESS]
+2024-12-09 18:30:34,294 - INFO - Processing Generated Data\test5k.json...
+2024-12-09 18:30:34,297 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-09 18:30:34,907 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-09 18:30:35,091 - INFO - Use pytorch device: cpu
+2024-12-09 20:19:19,813 - INFO - 
+File Domain Summary:
+2024-12-09 20:19:19,817 - INFO -   - test5k.json: unknown [WILL PROCESS]
+2024-12-09 20:19:19,817 - INFO - Processing Generated Data\test5k.json...
+2024-12-09 20:19:19,820 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-09 20:19:20,430 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-09 20:19:20,627 - INFO - Use pytorch device: cpu
