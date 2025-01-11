@@ -8,16 +8,18 @@ GENERATED_DATA_FOLDER = "Generated Data"
 REPORT_FOLDER = "Report"
 
 # Analysis Thresholds
-SIMILARITY_THRESHOLD = 0.92  # Threshold for detecting similar reviews
+SIMILARITY_THRESHOLD = 0.92  # Combined similarity threshold for deduplication
+EMBEDDING_SIMILARITY_THRESHOLD = 0.98  # Threshold for semantic similarity
+NGRAM_SIMILARITY_THRESHOLD = 0.85  # Threshold for structural similarity
 SENTIMENT_CONFIDENCE_THRESHOLD = 0.92  # Threshold for sentiment validation confidence
 LINGUISTIC_QUALITY_THRESHOLD = 0.70  # Minimum acceptable linguistic quality score
 
 # Similarity Analysis Features
 ENABLE_TIERED_SIMILARITY = True  # Feature flag for tiered similarity analysis
 SIMILARITY_TIERS = {
-    'tier1': 0.92,  # Exact or near-exact matches
-    'tier2': 0.86,  # Very similar content
-    'tier3': 0.80   # Moderately similar content
+    'tier1': 0.98,  # Identical semantic content (embedding similarity)
+    'tier2': 0.92,  # High combined similarity (for deduplication)
+    'tier3': 0.85   # Structural similarity (n-gram based)
 }
 
 # Topic Analysis Configuration
@@ -58,6 +60,8 @@ def validate_thresholds() -> None:
     """Validate threshold values"""
     threshold_checks = [
         (SIMILARITY_THRESHOLD, "SIMILARITY_THRESHOLD"),
+        (EMBEDDING_SIMILARITY_THRESHOLD, "EMBEDDING_SIMILARITY_THRESHOLD"),
+        (NGRAM_SIMILARITY_THRESHOLD, "NGRAM_SIMILARITY_THRESHOLD"),
         (SENTIMENT_CONFIDENCE_THRESHOLD, "SENTIMENT_CONFIDENCE_THRESHOLD"),
         (LINGUISTIC_QUALITY_THRESHOLD, "LINGUISTIC_QUALITY_THRESHOLD"),
         (MIN_TOPIC_COHERENCE, "MIN_TOPIC_COHERENCE")
@@ -126,6 +130,8 @@ def get_config() -> Dict[str, Any]:
         
         # Analysis Thresholds
         'similarity_threshold': SIMILARITY_THRESHOLD,
+        'embedding_similarity_threshold': EMBEDDING_SIMILARITY_THRESHOLD,
+        'ngram_similarity_threshold': NGRAM_SIMILARITY_THRESHOLD,
         'sentiment_confidence_threshold': SENTIMENT_CONFIDENCE_THRESHOLD,
         'linguistic_quality_threshold': LINGUISTIC_QUALITY_THRESHOLD,
         

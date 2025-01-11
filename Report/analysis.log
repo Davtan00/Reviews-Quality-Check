@@ -97,3 +97,121 @@ Processing file: Tech10k.json
 2024-12-06 21:22:51,423 - INFO - Report generated: Report\analysis_report_Tech10k_distilbert-sst2.pdf
 2024-12-06 21:22:51,423 - INFO - 
 Processing complete. 1 file(s) processed.
+2024-12-06 22:01:38,189 - INFO - 
+File Domain Summary:
+2024-12-06 22:01:38,209 - INFO -   - Tech10k.json: technology [WILL PROCESS]
+2024-12-06 22:01:38,209 - INFO - 
+Processing file: Tech10k.json
+2024-12-06 22:01:38,209 - INFO - Loading data from Generated Data\Tech10k.json
+2024-12-06 22:01:38,236 - INFO - Loaded 10000 reviews
+2024-12-06 22:01:38,237 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-06 22:01:38,715 - INFO - Use pytorch device: cpu
+2024-12-06 22:01:38,715 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-06 22:01:39,405 - INFO - Performing exact matching for short texts...
+2024-12-06 22:03:34,822 - INFO - Processing similarity matrices...
+2024-12-06 22:08:56,510 - INFO - Saved tiered similarity analysis to: similarity_tiers_20241206_220856.json
+2024-12-06 22:08:56,512 - INFO - Validating sentiments for 10000 reviews...
+2024-12-06 22:14:37,791 - INFO - Found 231 sentiment mismatches
+2024-12-06 22:14:37,796 - INFO - Removing 690 reviews marked as duplicates or too similar
+2024-12-06 22:14:37,876 - INFO - Saved cleaned dataset with 9310 reviews to: Report\cleaned_Tech10k_distilbert-sst2.json
+2024-12-06 22:14:37,885 - INFO - Saved sentiment mismatches to: Report\SM_analysis_report_Tech10k_distilbert-sst2.json
+2024-12-06 22:14:37,927 - ERROR - Error processing Generated Data\Tech10k.json: generate_pdf_report() missing 1 required positional argument: 'similarity_results'
+Traceback (most recent call last):
+  File "C:\Users\David\Desktop\collectiongpt4o\Reviews-Quality-Check\review_analysis.py", line 638, in main
+    generate_pdf_report(
+TypeError: generate_pdf_report() missing 1 required positional argument: 'similarity_results'
+2024-12-06 22:14:37,928 - INFO - 
+Processing complete. 0 file(s) processed.
+2024-12-06 22:20:15,329 - INFO - 
+File Domain Summary:
+2024-12-06 22:20:15,355 - INFO -   - Tech10k.json: technology [WILL PROCESS]
+2024-12-06 22:21:07,682 - INFO - 
+File Domain Summary:
+2024-12-06 22:21:07,707 - INFO -   - Tech10k.json: technology [WILL PROCESS]
+2024-12-06 22:24:51,597 - ERROR - Error in main execution: name 'VISUALIZATION_FOLDER' is not defined
+Traceback (most recent call last):
+  File "C:\Users\David\Desktop\collectiongpt4o\Reviews-Quality-Check\review_analysis.py", line 594, in main
+    os.makedirs(VISUALIZATION_FOLDER, exist_ok=True)
+NameError: name 'VISUALIZATION_FOLDER' is not defined
+2024-12-06 22:37:08,882 - INFO - 
+File Domain Summary:
+2024-12-06 22:37:08,907 - INFO -   - Tech10k.json: technology [WILL PROCESS]
+2024-12-06 22:37:08,907 - INFO - Processing Generated Data\Tech10k.json...
+2024-12-06 22:37:08,926 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-06 22:37:09,685 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-06 22:37:09,951 - INFO - Use pytorch device: cpu
+2024-12-06 23:28:59,589 - INFO - 
+File Domain Summary:
+2024-12-06 23:28:59,595 - INFO -   - rawr35.json: unknown [WILL PROCESS]
+2024-12-06 23:28:59,595 - INFO - Processing Generated Data\rawr35.json...
+2024-12-06 23:28:59,601 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-06 23:29:00,209 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-06 23:29:00,468 - INFO - Use pytorch device: cpu
+2024-12-06 23:29:40,766 - INFO - 
+File Domain Summary:
+2024-12-06 23:29:40,782 - INFO -   - Tech10k.json: technology [WILL PROCESS]
+2024-12-06 23:29:40,783 - INFO - Processing Generated Data\Tech10k.json...
+2024-12-06 23:29:40,799 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-06 23:29:41,424 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-06 23:29:41,604 - INFO - Use pytorch device: cpu
+2024-12-07 15:30:16,219 - INFO - 
+File Domain Summary:
+2024-12-07 15:30:16,233 - INFO -   - combined_reviews.json: ecommerce [WILL PROCESS]
+2024-12-07 15:30:16,234 - INFO - Processing Generated Data\combined_reviews.json...
+2024-12-07 15:30:16,248 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-07 15:30:17,182 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-07 15:30:17,555 - INFO - Use pytorch device: cpu
+2024-12-07 15:48:42,048 - INFO - 
+File Domain Summary:
+2024-12-07 15:48:42,062 - INFO -   - combined_reviews.json: ecommerce [WILL PROCESS]
+2024-12-07 15:48:42,062 - INFO - Processing Generated Data\combined_reviews.json...
+2024-12-07 15:48:42,077 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-07 15:48:42,722 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-07 15:48:42,932 - INFO - Use pytorch device: cpu
+2024-12-08 21:44:18,856 - INFO - 
+File Domain Summary:
+2024-12-08 21:44:18,949 - INFO -   - combined_reviews_hc.json: healthcare [WILL PROCESS]
+2024-12-08 21:44:18,950 - INFO - Processing Generated Data\combined_reviews_hc.json...
+2024-12-08 21:44:19,051 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-08 21:44:19,910 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-08 21:44:20,310 - INFO - Use pytorch device: cpu
+2024-12-08 21:45:57,726 - INFO - 
+File Domain Summary:
+2024-12-08 21:45:57,821 - INFO -   - combined_reviews_hc.json: healthcare [WILL PROCESS]
+2024-12-08 21:45:57,821 - INFO - Processing Generated Data\combined_reviews_hc.json...
+2024-12-08 21:45:57,926 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-08 21:45:58,528 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-08 21:45:58,778 - INFO - Use pytorch device: cpu
+2024-12-08 21:52:38,368 - INFO - 
+File Domain Summary:
+2024-12-08 21:52:38,464 - INFO -   - combined_reviews_hc.json: healthcare [WILL PROCESS]
+2024-12-08 21:52:38,464 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-08 21:52:39,060 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-08 21:52:39,327 - INFO - Use pytorch device: cpu
+2024-12-08 21:53:38,343 - INFO - 
+File Domain Summary:
+2024-12-08 21:53:38,442 - INFO -   - combined_reviews_hc.json: healthcare [WILL PROCESS]
+2024-12-08 21:53:38,442 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-08 21:53:39,058 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-08 21:53:39,329 - INFO - Use pytorch device: cpu
+2024-12-09 13:43:55,266 - INFO - 
+File Domain Summary:
+2024-12-09 13:43:55,270 - INFO -   - test5k.json: unknown [WILL PROCESS]
+2024-12-09 13:43:55,270 - INFO - Processing Generated Data\test5k.json...
+2024-12-09 13:43:55,273 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-09 13:43:56,129 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-09 13:43:56,457 - INFO - Use pytorch device: cpu
+2024-12-09 18:30:34,290 - INFO - 
+File Domain Summary:
+2024-12-09 18:30:34,293 - INFO -   - test5k.json: unknown [WILL PROCESS]
+2024-12-09 18:30:34,294 - INFO - Processing Generated Data\test5k.json...
+2024-12-09 18:30:34,297 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-09 18:30:34,907 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-09 18:30:35,091 - INFO - Use pytorch device: cpu
+2024-12-09 20:19:19,813 - INFO - 
+File Domain Summary:
+2024-12-09 20:19:19,817 - INFO -   - test5k.json: unknown [WILL PROCESS]
+2024-12-09 20:19:19,817 - INFO - Processing Generated Data\test5k.json...
+2024-12-09 20:19:19,820 - INFO - Loading sentiment model: distilbert-base-uncased-finetuned-sst-2-english
+2024-12-09 20:19:20,430 - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+2024-12-09 20:19:20,627 - INFO - Use pytorch device: cpu
