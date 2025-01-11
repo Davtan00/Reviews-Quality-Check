@@ -657,12 +657,12 @@ def main():
                 
                 # Build up metrics for PDF
                 quality_metrics = {
-                    'total_reviews': results['stats']['total_reviews'],  
-                    'average_linguistic_quality': results['stats']['average_linguistic_quality'],
-                    'topic_diversity': results['stats']['topic_diversity'],
-                    'topic_coherence_cv': results['stats']['topic_coherence_cv'],
-                    'topic_coherence_umass': results['stats']['topic_coherence_umass'],
-                    'sentiment_confidence': results['stats']['sentiment_confidence']
+                    'total_reviews': results['total_reviews'],
+                    'average_linguistic_quality': results['average_linguistic_quality'],
+                    'topic_diversity': results['topic_diversity'],
+                    'topic_coherence_cv': results['topic_coherence_cv'],
+                    'topic_coherence_umass': results['topic_coherence_umass'],
+                    'sentiment_confidence': results['sentiment_confidence']
                 }
 
                 # Generate PDF report
