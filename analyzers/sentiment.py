@@ -10,11 +10,16 @@ class SentimentValidator:
     Advanced sentiment validation system with configurable models.
     
     This class uses a Hugging Face Transformers-based model to predict 
-    sentiment and then refines the result by checking:
+    sentiment and then refines the result by cross-referencing:
       - Domain-specific indicators (positive, negative, neutral markers)
       - Context markers and neutral patterns (e.g., contrast words, 
-        balanced statements, comparisons)
+        balanced statements, comparisons, negations)
       - Confidence thresholds (which differ per model type)
+      - Additional linguistic features (negation handling, stronger 
+        neutral detection, combined domain model weighting)
+
+    By combining model-based sentiment with domain heuristics, 
+    we aim to produce robust, context-aware sentiment evaluations.
     """
     
     def __init__(self, model_key: str = 'distilbert-sst2'):
@@ -23,7 +28,7 @@ class SentimentValidator:
         
         Args:
             model_key: Key from ModelConfig.SUPPORTED_MODELS.
-                      Defaults to 'distilbert-sst2'.
+                       Defaults to 'distilbert-sst2'.
         Raises:
             ValueError: If the model_key is not found in SUPPORTED_MODELS.
         """
@@ -64,6 +69,9 @@ class SentimentValidator:
             'good enough', 'not great but', 'not bad but'
         })
         
+        # Simple negation words and phrases to detect scope-based polarity changes
+        self.negation_words = {'not', 'no', 'never', 'none', 'cannot', "n't", 'hardly', 'rarely'}
+        
         # Regex-based patterns that typically reflect neutral/balanced language
         self.neutral_patterns = {
             'performance_comparison': r'(?i)(compared|relative|versus|vs).*(?:newer|other|previous|similar)',
@@ -82,6 +90,8 @@ class SentimentValidator:
             or 'default' to a float threshold.
         """
         if self.model_type == 'binary':
+            # Binary model might focus strongly on positive/negative,
+            # so we keep stricter thresholds.
             return {
                 "neutral": 0.85,
                 "positive": 0.90,
@@ -89,13 +99,15 @@ class SentimentValidator:
                 "default": 0.95
             }
         elif self.model_type == 'three-class':
+            # Three-class typically has a native 'neutral', so slightly lower threshold.
             return {
-                "neutral": 0.75,  # Lower threshold for native neutral detection
+                "neutral": 0.75,
                 "positive": 0.85,
                 "negative": 0.85,
                 "default": 0.90
             }
         else:  # five-class
+            # Five-class often merges intermediate classes (slightly broader distribution).
             return {
                 "neutral": 0.70,
                 "positive": 0.80,
@@ -107,6 +119,10 @@ class SentimentValidator:
         """
         Map model output to a standardized sentiment label and adjust confidence if needed.
         
+        For a five-class model, we apply a mild penalty if the predicted class is one
+        of the borderline classes (e.g., slightly positive/negative), reflecting potential
+        overlap in sub-class distinctions. This helps calibrate the confidence.
+        
         Args:
             predicted_class: The class index predicted by the model.
             confidence: The probability or confidence value for that class.
@@ -116,19 +132,37 @@ class SentimentValidator:
         """
         predicted_sentiment = self.label_mapping.get(predicted_class, 'neutral')
         
-        # Example: In a five-class model, some classes might merge, so we penalize confidence slightly.
+        # For five-class, apply a mild penalty if we are in a borderline class
         if self.model_type == 'five-class':
-            if predicted_class in [1, 2] or predicted_class in [4, 5]:
-                confidence *= 0.9  # Penalty for merged classes
+            # Classes [1,2,3] can correspond to 'slightly negative', 'neutral', or 'slightly positive'
+            # depending on the label_mapping, so we reduce the confidence to account for possible overlap.
+            if predicted_class in [1, 2, 3]:
+                confidence *= 0.90
 
         return {
             'sentiment': predicted_sentiment,
             'confidence': confidence
         }
 
-    def _check_domain_indicators(self, text: str, domain: str = None) -> Dict[str, Union[bool, str]]:
+    def _detect_negations(self, text_tokens: List[str]) -> bool:
+        """
+        Detect if the text contains common negation terms that can reverse or moderate sentiment.
+        
+        Args:
+            text_tokens: Tokenized version of the text.
+        
+        Returns:
+            True if at least one negation word is found, False otherwise.
+        """
+        return any(token in self.negation_words for token in text_tokens)
+
+    def _check_domain_indicators(self, text: str, domain: str = None) -> Dict[str, Union[bool, str, Dict]]:
         """
         Check text for domain-specific sentiment indicators.
+        
+        If the text has domain indicators that outweigh each other (e.g., 
+        more negative words than positive in a domain context), we 
+        store that as a domain-based sentiment that may re-weight the final output.
         
         Args:
             text: The text to analyze.
@@ -151,14 +185,20 @@ class SentimentValidator:
         text_lower = text.lower()
         domain_indicators = self.domain_indicators[domain]
         
-        positive_matches = sum(1 for indicator in domain_indicators['positive'] 
-                               if indicator in text_lower)
-        negative_matches = sum(1 for indicator in domain_indicators['negative'] 
-                               if indicator in text_lower)
-        neutral_matches = sum(1 for marker in domain_indicators['neutral_markers'] 
-                              if marker in text_lower)
+        positive_matches = sum(
+            1 for indicator in domain_indicators['positive'] 
+            if indicator in text_lower
+        )
+        negative_matches = sum(
+            1 for indicator in domain_indicators['negative'] 
+            if indicator in text_lower
+        )
+        neutral_matches = sum(
+            1 for marker in domain_indicators['neutral_markers'] 
+            if marker in text_lower
+        )
         
-        # Basic logic: if neutral markers outnumber positive+negative, treat it as neutral
+        # Basic domain logic: if neutral markers outnumber positive+negative, treat it as neutral
         if neutral_matches > 0 and (positive_matches + negative_matches) <= neutral_matches:
             domain_sentiment = 'neutral'
         elif positive_matches > negative_matches:
@@ -179,26 +219,34 @@ class SentimentValidator:
             }
         }
 
-    def _analyze_context(self, text: str) -> Dict[str, bool]:
+    def _analyze_context(self, text: str) -> Dict[str, Union[bool, int]]:
         """
         Analyze the context of the text for sentiment modifiers (contrast markers, 
-        neutral indicators, sentence counts, etc.).
+        neutral indicators, sentence counts, negation, etc.).
+        
+        Negation detection is crucial because 'not good' might invert the polarity 
+        from positive to negative.
         
         Args:
             text: The text to analyze.
         
         Returns:
-            A dictionary indicating presence of contrast, neutral indicators, 
-            word count, and whether multiple sentences exist.
+            A dictionary indicating:
+              - 'has_contrast': bool
+              - 'has_neutral_indicators': bool
+              - 'word_count': int
+              - 'has_multiple_sentences': bool
+              - 'has_negation': bool
         """
         text_lower = text.lower()
-        words = word_tokenize(text_lower)
+        tokens = word_tokenize(text_lower)
         
         return {
             'has_contrast': any(marker in text_lower for marker in self.contrast_markers),
             'has_neutral_indicators': any(indicator in text_lower for indicator in self.neutral_indicators),
-            'word_count': len(words),
-            'has_multiple_sentences': (len(text.split('.')) > 1)
+            'word_count': len(tokens),
+            'has_multiple_sentences': (len(re.split(r'[.!?]+', text)) > 1),
+            'has_negation': self._detect_negations(tokens),
         }
 
     def _detect_neutral_patterns(self, text: str) -> bool:
@@ -220,7 +268,10 @@ class SentimentValidator:
 
     def _check_neutral_indicators(self, text: str) -> Dict[str, bool]:
         """
-        Check for various indicators of neutral sentiment in the text.
+        Check for various indicators of neutral sentiment in the text, 
+        including advanced patterns (contrast + 'but', pros/cons, etc.).
+        
+        If multiple signals are found, we consider it strong evidence of neutrality.
         
         Args:
             text: The text to analyze.
@@ -280,11 +331,11 @@ class SentimentValidator:
         return self.confidence_thresholds.get(sentiment_type, self.confidence_thresholds['default'])
 
     def _adjust_confidence_for_neutral(self, confidence: float, 
-                                       context: Dict[str, bool], 
+                                       context: Dict[str, Union[bool, int]], 
                                        text: str) -> float:
         """
         Adjust the confidence score when the predicted sentiment is neutral, 
-        factoring in context about contrast markers, text length, etc.
+        factoring in context about contrast markers, negations, text length, etc.
         
         Args:
             confidence: Original confidence score.
@@ -294,15 +345,17 @@ class SentimentValidator:
         Returns:
             The adjusted confidence score (float).
         """
+        # If there's contrast, we reduce the confidence in a purely neutral classification
         if context['has_contrast']:
             confidence *= 0.9
         
-        # If the text is long and has multiple sentences, we slightly lower confidence
+        # If the text is somewhat long and has multiple sentences, 
+        # we reduce confidence slightly to account for potential nuance
         if context['has_multiple_sentences'] and context['word_count'] > 20:
             confidence *= 0.95
         
-        # If there are multiple neutral indicators present, we slightly increase 
-        # neutral confidence, capped at 1.0
+        # If there are multiple neutral indicators present, we slightly 
+        # increase neutral confidence, capped at 1.0
         neutral_count = sum(
             1 for indicator in self.neutral_indicators 
             if indicator in text.lower()
@@ -312,16 +365,48 @@ class SentimentValidator:
         
         return confidence
 
+    def _merge_domain_and_model_sentiment(self,
+                                          predicted_sentiment: str,
+                                          domain_sentiment: str,
+                                          confidence: float) -> (str, float):
+        """
+        Merge domain-based sentiment with model-based sentiment in cases where 
+        strong domain indicators might override or reinforce the model output.
+        
+        If the domain-based sentiment differs from the model's and 
+        the model confidence is below a borderline threshold, the final sentiment
+        can shift toward the domain-based outcome.
+        
+        Args:
+            predicted_sentiment: The sentiment predicted by the model.
+            domain_sentiment: The sentiment derived from domain indicators.
+            confidence: The model's confidence for the predicted sentiment.
+        
+        Returns:
+            A (merged_sentiment, merged_confidence) tuple.
+        """
+        if domain_sentiment is None:
+            return predicted_sentiment, confidence
+        
+        # We treat 0.80 as a borderline threshold for confidence
+        borderline_threshold = 0.80
+        if domain_sentiment != predicted_sentiment and confidence < borderline_threshold:
+            predicted_sentiment = domain_sentiment
+            confidence *= 0.85
+        
+        return predicted_sentiment, confidence
+
     def validate_sentiment(self, text: str, labeled_sentiment: str, domain: str = None) -> Dict[str, Union[str, bool, float, Dict]]:
         """
         Perform sentiment validation on a single piece of text against a labeled sentiment.
         
         Steps:
          1. Check domain-based indicators (if domain is provided).
-         2. Analyze context (contrast words, multiple sentences, etc.).
+         2. Analyze context (contrast words, negations, multiple sentences, etc.).
          3. Run the model to predict sentiment and confidence.
-         4. Check for neutral indicators and patterns; possibly override sentiment to 'neutral'.
-         5. Determine if there's a mismatch using dynamic thresholds.
+         4. Merge model prediction with domain-based sentiment (if any).
+         5. Check for neutral indicators and patterns; possibly override sentiment to 'neutral'.
+         6. Determine if there's a mismatch using dynamic thresholds.
         
         Args:
             text: The review text to analyze.
@@ -352,6 +437,8 @@ class SentimentValidator:
         context = self._analyze_context(text)
         if context['has_contrast']:
             logging.debug("Found contrasting statements in text")
+        if context['has_negation']:
+            logging.debug("Negation detected in text")
         
         # 3. Run the model prediction
         logging.debug("Running model prediction...")
@@ -367,7 +454,14 @@ class SentimentValidator:
         confidence = prediction['confidence']
         logging.debug(f"Initial model prediction: {predicted_sentiment} (confidence: {confidence:.3f})")
         
-        # 4. Check for neutral indicators/patterns and possibly override sentiment
+        # 4. Merge domain-based sentiment with model result, if applicable
+        predicted_sentiment, confidence = self._merge_domain_and_model_sentiment(
+            predicted_sentiment,
+            domain_sentiment['sentiment'],
+            confidence
+        )
+        
+        # 5. Check for neutral indicators/patterns and possibly override sentiment
         logging.debug("Checking for neutral indicators...")
         has_neutral_indicators = any(indicator in text.lower() for indicator in self.neutral_indicators)
         has_neutral_patterns = self._detect_neutral_patterns(text)
@@ -377,21 +471,19 @@ class SentimentValidator:
         if has_neutral_patterns:
             logging.debug("Found neutral patterns in text")
         
-        # If either are present, we override to neutral and adjust confidence
         if has_neutral_indicators or has_neutral_patterns:
+            # Adjust confidence for neutral classification
             predicted_sentiment = "neutral"
             confidence = self._adjust_confidence_for_neutral(confidence, context, text)
             logging.debug(f"Overriding sentiment to neutral (confidence: {confidence:.3f})")
         
-        # 5. Determine mismatch based on dynamic thresholds
+        # 6. Determine mismatch based on dynamic thresholds
         is_mismatch = False
         if labeled_sentiment == "neutral":
-            # If labeled is neutral but model strongly suggests otherwise
             threshold = self._get_confidence_threshold("neutral")
             is_mismatch = (
                 confidence > threshold 
-                and not has_neutral_indicators
-                and not has_neutral_patterns
+                and predicted_sentiment != 'neutral'
             )
         else:
             threshold = self._get_confidence_threshold(predicted_sentiment)
@@ -424,6 +516,9 @@ class SentimentValidator:
         """
         Validate sentiments for a batch of reviews and return those that mismatch.
         
+        This method processes reviews in small batches. Domain checks and 
+        partial neutral detection are also considered for each review.
+        
         Args:
             reviews: List of review dictionaries with 'text' and 'sentiment' keys.
             domain_override: Optional domain to use for all reviews.
@@ -439,7 +534,7 @@ class SentimentValidator:
         """
         mismatches = []
         total = len(reviews)
-        batch_size = 32  # Process in smaller batches to show more frequent progress
+        batch_size = 32
         
         logging.info(f"Validating sentiments for {total} reviews...")
         
@@ -454,7 +549,7 @@ class SentimentValidator:
                             text = review['text']
                             original_sentiment = review['sentiment']
                             
-                            # Run model prediction in the same way as validate_sentiment does
+                            # Run model prediction
                             inputs = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
                             outputs = self.model(**inputs)
                             predicted_class = outputs.logits.argmax().item()
@@ -467,17 +562,23 @@ class SentimentValidator:
                             
                             # Check domain-specific indicators
                             domain_check = self._check_domain_indicators(text, domain_override)
+                            # Merge domain sentiment
+                            predicted_sentiment, confidence_val = self._merge_domain_and_model_sentiment(
+                                predicted_sentiment, 
+                                domain_check['sentiment'], 
+                                confidence_val
+                            )
                             
                             # Check for neutral indicators
                             neutral_check = self._check_neutral_indicators(text)
-                            
-                            # If strong neutral signals exist but model is not neutral, lower confidence
                             if neutral_check['strong_neutral_indication'] and predicted_sentiment != 'neutral':
                                 confidence_val *= 0.8
                             
                             # If confidence is high enough and sentiments don't match, record a mismatch
-                            threshold = self.confidence_thresholds.get(predicted_sentiment, 
-                                                                       self.confidence_thresholds['default'])
+                            threshold = self.confidence_thresholds.get(
+                                predicted_sentiment, 
+                                self.confidence_thresholds['default']
+                            )
                             if confidence_val > threshold and predicted_sentiment != original_sentiment:
                                 mismatches.append({
                                     'text': text,
@@ -492,7 +593,6 @@ class SentimentValidator:
                             logging.warning(f"Error processing review: {str(e)}")
                             continue
                         
-                        # Update progress bar
                         pbar.update(1)
                         
         except ImportError:
@@ -518,16 +618,23 @@ class SentimentValidator:
                     
                     # Check domain-specific indicators
                     domain_check = self._check_domain_indicators(text, domain_override)
+                    # Merge domain sentiment
+                    predicted_sentiment, confidence_val = self._merge_domain_and_model_sentiment(
+                        predicted_sentiment, 
+                        domain_check['sentiment'], 
+                        confidence_val
+                    )
                     
                     # Check for neutral indicators
                     neutral_check = self._check_neutral_indicators(text)
-                    
                     if neutral_check['strong_neutral_indication'] and predicted_sentiment != 'neutral':
                         confidence_val *= 0.8
                     
                     # If confidence is high enough and sentiments don't match
-                    threshold = self.confidence_thresholds.get(predicted_sentiment, 
-                                                               self.confidence_thresholds['default'])
+                    threshold = self.confidence_thresholds.get(
+                        predicted_sentiment, 
+                        self.confidence_thresholds['default']
+                    )
                     if confidence_val > threshold and predicted_sentiment != original_sentiment:
                         mismatches.append({
                             'text': text,
