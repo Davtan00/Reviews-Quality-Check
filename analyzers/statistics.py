@@ -6,8 +6,12 @@ import numpy as np
 from scipy.stats import entropy
 from sklearn.feature_extraction.text import CountVectorizer
 
+
+
 class StatisticalAnalyzer:
     """
+    Sort of does the same thing as the similarity analyzer was initinally made thinking we could do 
+    some alternative analysis that would be more fitting to be put onto a pdf(limited space)
     A class for performing basic statistical analyses on text data, including:
       1. KL divergence between distributions (via scipy.stats.entropy).
       2. N-gram frequency analysis (bigrams and trigrams).

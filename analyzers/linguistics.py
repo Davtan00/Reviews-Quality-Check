@@ -7,21 +7,16 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-try:
-    # Try loading the larger model first
-    nlp = spacy.load('en_core_web_md')  # Medium-sized model with word vectors
-except OSError:
-    print("Installing required model...")
-    from spacy.cli import download
-    download('en_core_web_md')
-    nlp = spacy.load('en_core_web_md')
-
-# Add a warning if falling back to small model
-def check_model_capabilities():
+def check_model_capabilities(nlp):
+    """
+    Warn if the loaded spaCy model lacks word vectors for better semantic similarity.
+    """
+    # Some models may not include word vectors, which can reduce the accuracy of .similarity()
+    # checks. This function logs a warning if vectors are absent.
     if not nlp.has_pipe('vectors'):
         logger.warning(
-            "Using a model without word vectors. Consider using 'en_core_web_md' or 'en_core_web_lg' "
-            "for better similarity calculations."
+            "Using a model without word vectors. Consider installing and using 'en_core_web_md' "
+            "or 'en_core_web_lg' for better similarity calculations."
         )
 
 class SophisticatedLinguisticAnalyzer:
@@ -40,19 +35,35 @@ class SophisticatedLinguisticAnalyzer:
         """
         Initialize the linguistic analyzer.
         
-        Attempts to run spaCy on the best available hardware (GPU, MPS) via spacy.prefer_gpu().
+        Attempts to run spaCy on the best available hardware (GPU/MPS) via spacy.prefer_gpu().
         If no compatible hardware is found, it silently falls back to CPU.
+
+        Tries loading 'en_core_web_md' and installs it if unavailable. If loading still fails,
+        falls back to 'en_core_web_sm'.
         """
+        # Attempt to use GPU/MPS if available
         try:
-            spacy.prefer_gpu()  # Attempt to use GPU/MPS if available
-        except Exception as e:
-            # If spaCy can't use GPU/MPS, it'll remain on CPU
+            spacy.prefer_gpu()
+        except Exception:
             pass
         
-        # Load spaCy model
-        self.nlp = spacy.load('en_core_web_sm')
+        # Try loading the medium model. If that fails, install it, and if it still fails, use 'sm'.
+        try:
+            self.nlp = spacy.load('en_core_web_md')
+        except OSError:
+            logger.info("Model 'en_core_web_md' not found. Attempting to install it...")
+            from spacy.cli import download
+            download('en_core_web_md')
+            try:
+                self.nlp = spacy.load('en_core_web_md')
+            except OSError:
+                logger.warning("Falling back to 'en_core_web_sm' because 'en_core_web_md' could not be loaded.")
+                self.nlp = spacy.load('en_core_web_sm')
         
-        # Optional thresholds for sophisticated usage (not directly used, but can be expanded)
+        # Check if we have vectors for better similarity calculations
+        check_model_capabilities(self.nlp)
+        
+        # Optional thresholds for sophisticated usage (not directly used, but can be expanded, was intended to provide more customizability for users.)
         self.sophistication_threshold = {
             'basic': 0.3,
             'intermediate': 0.6,
@@ -98,7 +109,7 @@ class SophisticatedLinguisticAnalyzer:
         complexity_score = np.mean(complexity_scores) if complexity_scores else 0.0
         
         # Combine them (lightly scaled by 1/10 for complexity_score)
-        # and clamp complexity to 1.0 if it's high
+        # and clamp complexity to 1.0 if it's very high
         return (length_variety + min(complexity_score / 10.0, 1.0)) / 2.0
     
     def analyze_vocabulary(self, doc) -> float:
@@ -128,10 +139,11 @@ class SophisticatedLinguisticAnalyzer:
         lexical_density = len(content_tokens) / len(doc) if len(doc) else 0.0
         
         # Count how many content tokens are "sophisticated" (rank >= 10000 => less frequent)
+        # Note: 'token.rank' depends on having word vectors/frequency info in your model.
         sophisticated_words = sum(1 for token in content_tokens if token.rank >= 10000)
         sophistication_score = sophisticated_words / max(len(content_lemmas), 1)
         
-        # Combine them with minimal weighting (just a simple average)
+        # Combine them with minimal weighting (simple average)
         return (lexical_density + min(sophistication_score, 1.0)) / 2.0
     
     def analyze_coherence(self, doc) -> float:
@@ -166,7 +178,7 @@ class SophisticatedLinguisticAnalyzer:
             else:
                 entity_overlap = len(prev_entities & curr_entities) / union_size
             
-            # Check for semantic similarity (spaCy vector-based)
+            # Check for semantic similarity (depends on word vectors)
             similarity = prev_sent.similarity(curr_sent)
             
             # Combine them
@@ -193,7 +205,7 @@ class SophisticatedLinguisticAnalyzer:
             prev_end = sentences[i - 1][-1] if sentences[i - 1] else ''
             curr_start = sentences[i][0] if sentences[i] else ''
             
-            # Very naive check: if the previous sentence ends with punctuation 
+            # Naive check: if the previous sentence ends with punctuation 
             # and the current sentence starts capitalized => +1
             if prev_end in {'.', '!', '?'} and curr_start.isupper():
                 flow_scores.append(1.0)
@@ -247,19 +259,19 @@ class SophisticatedLinguisticAnalyzer:
         vocabulary_score = self.analyze_vocabulary(doc)
         coherence_score = self.analyze_coherence(doc)
         
-        # Combine Flesch and Dale-Chall readings into a single normalized value
+        # Combine Flesch and Dale-Chall into a single normalized value
         readability_score = (
-            (flesch_reading_ease(text) / 100.0) 
+            (flesch_reading_ease(text) / 100.0)
             + (dale_chall_readability_score(text) / 10.0)
         ) / 2.0
         
         # Grammar checks
         grammar_issues = self._check_grammar_with_textblob(blob)
-        # A simple approach: 1 - (# issues / total words). Clamped between 0.0 and 1.0.
+        # A simple approach: 1 - (# issues / total words). Clamped to [0.0, 1.0].
         grammar_score = 1.0 - (len(grammar_issues) / len(text.split()))
         grammar_score = max(0.0, min(grammar_score, 1.0))
         
-        # Average all main metrics for a final "quality_score"
+        # Average all main metrics for a final 'quality_score'
         quality_score = np.mean([
             structure_score,
             vocabulary_score,
@@ -299,10 +311,11 @@ class SophisticatedLinguisticAnalyzer:
                 next_word, next_tag = tags[i + 1]
                 
                 # Simple subject-verb agreement checks
+                # e.g., singular noun -> plural verb, or plural noun -> singular verb
                 if (tag == 'NN' and next_tag == 'VBP') or (tag == 'NNS' and next_tag == 'VBZ'):
                     issues.append(f"Possible subject-verb agreement error: '{word} {next_word}'")
             
-            # Check indefinite article usage
+            # Check indefinite article usage (a/an)
             for i, (word, tag) in enumerate(tags):
                 if tag == 'DT' and word.lower() == 'a' and i < len(tags) - 1:
                     next_word = sentence.words[i + 1].lower()

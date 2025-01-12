@@ -294,7 +294,7 @@ def process_file(file_path: Path, model_key: str, domain_override: str = None) -
             return {
                 'total_reviews': total_reviews,
                 'duplicates_found': duplicates_found_count,
-                'average_similarity': 0.0,  # TODO: implement
+                'average_similarity': 0.0,  # placeholder
                 'high_similarity_pairs': len(similar_pairs),
                 
                 'average_linguistic_quality': (
@@ -315,8 +315,8 @@ def process_file(file_path: Path, model_key: str, domain_override: str = None) -
                     if sentiment_mismatches else 0.0
                 ),
                 # Additional details
-                'duplicates': exact_duplicates,  # list of groups
-                'similarity': similar_pairs,
+                'duplicates': exact_duplicates,          # list of groups
+                'similarity': similar_pairs,             # similarity analysis
                 'sentiment_mismatches_details': sentiment_mismatches,
                 'topic_analysis_details': {
                     'topics': {
@@ -328,19 +328,21 @@ def process_file(file_path: Path, model_key: str, domain_override: str = None) -
                     'individual_scores': [
                         {
                             'overall_score': s['flesch_score'],
-                            'coherence_score': s['flesch_score'],  # TODO: refine if needed
+                            'coherence_score': s['flesch_score'],  # could refine
                             'sophistication_score': s['flesch_score']
                         }
                         for s in quality_scores
                     ]
-                }
+                },
+                # We will pass "data" as original_data to generate_pdf_report
+                # so we keep it available if needed.
+                'original_data': data
             }
             
         except Exception as e:
             logging.error(f"Error processing file {file_path}: {str(e)}")
             raise
 
-# Helper function for specialized usage
 def analyze_topic_coherence(data: List[Dict[str, Any]], n_topics: int = 5):
     """
     Specialized LDA-based topic modeling approach with adaptive parameters.
@@ -585,6 +587,17 @@ def analyze_reviews_comprehensively(data):
         'cleaned_data_path': cleaned_json_path
     }
 
+def print_dict_structure(d, indent=0):
+    """Helper function to print dictionary structure with types."""
+    for key, value in d.items():
+        if isinstance(value, dict):
+            print("  " * indent + f"{key}: dict")
+            print_dict_structure(value, indent + 1)
+        elif isinstance(value, list):
+            print("  " * indent + f"{key}: list[{len(value)} items]")
+        else:
+            print("  " * indent + f"{key}: {type(value).__name__}")
+
 def main():
     """
     Main entry point for the command-line usage.
@@ -664,7 +677,47 @@ def main():
                     'topic_coherence_umass': results['topic_coherence_umass'],
                     'sentiment_confidence': results['sentiment_confidence']
                 }
-
+                print("\nResults structure:")
+                print_dict_structure(results)
+               
+            
+                
+                # Save detailed results to JSON
+                results_file_path = os.path.join(
+                    REPORT_FOLDER,
+                    f"detailed_analysis_{file_path.stem}_{args.model}.json"
+                )
+                
+                # Create a serializable version of the results
+                json_safe_results = {
+                    # Basic metrics
+                    'total_reviews': results['total_reviews'],
+                    'duplicates_found': results['duplicates_found'],
+                    'average_similarity': results['average_similarity'],
+                    'high_similarity_pairs': results['high_similarity_pairs'],
+                    'average_linguistic_quality': results['average_linguistic_quality'],
+                    'unigram_diversity': results['unigram_diversity'],
+                    'bigram_diversity': results['bigram_diversity'],
+                    'trigram_diversity': results['trigram_diversity'],
+                    'topic_coherence_cv': results['topic_coherence_cv'],
+                    'topic_coherence_umass': results['topic_coherence_umass'],
+                    'topic_diversity': results['topic_diversity'],
+                    'sentiment_mismatches': results['sentiment_mismatches'],
+                    'sentiment_confidence': results['sentiment_confidence'],
+                    
+                    # Detailed analysis results
+                    'duplicates': results['duplicates'],
+                    'similarity': results['similarity'],
+                    'sentiment_mismatches_details': results['sentiment_mismatches_details'],
+                    'topic_analysis_details': results['topic_analysis_details'],
+                    'linguistic_analysis': results['linguistic_analysis']
+                }
+                
+                with open(results_file_path, 'w', encoding='utf-8') as f:
+                    json.dump(json_safe_results, f, indent=2, ensure_ascii=False)
+                    
+                logging.info(f"Detailed analysis saved to: {results_file_path}")
+                
                 # Generate PDF report
                 report_file_path = os.path.join(
                     REPORT_FOLDER,
@@ -672,11 +725,12 @@ def main():
                 )
                 
                 generate_pdf_report(
-                    report_file_path,
-                    quality_metrics,
-                    results['duplicates'],
-                    results['sentiment_mismatches_details'],
-                    results['similarity']
+                    report_file_path,                # output_path
+                    quality_metrics,                 # analysis_results
+                    results['original_data'],        # original_data
+                    results['duplicates'],           # duplicates
+                    results['sentiment_mismatches_details'],  # sentiment_mismatches
+                    results['similarity']            # similarity_analysis
                 )
                 
                 logging.info(f"Report generated: {report_file_path}")

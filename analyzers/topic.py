@@ -21,9 +21,9 @@ class SophisticatedTopicAnalyzer:
         verbose: If True, prints progress and debugging info to stdout.
 
     References:
-        - "Finding scientific topics" (Griffiths & Steyvers, 2004)
-        - "A heuristic approach to determine an appropriate number of topics in LDA models" 
-          (Zhao et al., 2015)
+        - https://doi.org/10.1073/pnas.0307752101
+
+        - https://doi.org/10.1186/1471-2105-16-S13-S8
     """
     
     def __init__(self, min_topics=2, max_topics=10, verbose=False):

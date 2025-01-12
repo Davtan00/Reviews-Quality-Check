@@ -3,7 +3,7 @@ import random
 from typing import Dict, List
 import logging
 
-def reduce_dataset(input_file: str, output_file: str, target_size: int = 1000) -> None:
+def reduce_dataset(input_file: str, output_file: str, target_size: int = 5000) -> None:
     """
     Reduce dataset while maintaining sentiment distribution ratios.
     Handles Unicode properly and renumbers IDs sequentially.
@@ -57,7 +57,6 @@ def reduce_dataset(input_file: str, output_file: str, target_size: int = 1000) -
     
     # Create new JSON with same structure
     reduced_data = {
-        'request_id': data['request_id'],
         'domain': data['domain'],
         'generated_data': reduced_reviews,
         'summary': {
@@ -77,6 +76,6 @@ def reduce_dataset(input_file: str, output_file: str, target_size: int = 1000) -
     logging.info(f"Final distribution: {reduced_data['summary']['sentiment_distribution']}")
 
 if __name__ == "__main__":
-    input_file = "Generated Data/Tech10k.json"
-    output_file = "Generated Data/Tech1k.json"
+    input_file = "HC_Jan_summary.json"
+    output_file = "Generated Data/HC_Jan_5k.json"
     reduce_dataset(input_file, output_file) 

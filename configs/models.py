@@ -28,46 +28,154 @@ class ModelConfig:
     }
 
 class DomainIndicators:
-    """Domain-specific sentiment indicators"""
+    """Domain-specific sentiment indicators with expanded keyword sets."""
+
     INDICATORS = {
         'technology': {
-                'positive': {'innovative', 'efficient', 'powerful', 'impressive', 'reliable'},
-                'negative': {'slow', 'buggy', 'expensive', 'disappointing', 'unreliable'},
-                'neutral_markers': {'average', 'standard', 'typical', 'expected'}
+            'positive': {
+                'innovative', 'efficient', 'powerful', 'impressive', 'reliable',
+                'cutting-edge', 'scalable', 'disruptive', 'well-designed',
+                'user-centric', 'robust', 'secure', 'sleek', 'lightweight',
+                'groundbreaking', 'revolutionary', 'high-performance'
             },
-            'software': {
-                'positive': {'user-friendly', 'intuitive', 'fast', 'robust', 'feature-rich', 'versatile', 'stable', 'secure', 'efficient', 'scalable'},
-                'negative': {'crashes', 'unresponsive', 'complicated', 'glitchy', 'slow', 'insecure', 'outdated', 'buggy', 'limited', 'inefficient'},
-                'neutral_markers': {'adequate', 'functional', 'standard', 'acceptable', 'usable'}
+            'negative': {
+                'slow', 'buggy', 'expensive', 'disappointing', 'unreliable',
+                'outdated', 'clunky', 'inefficient', 'overhyped', 'vulnerable',
+                'data privacy concerns', 'fragile', 'resource-heavy', 'obsolete'
             },
-            'hotel': {
-                'positive': {'luxurious', 'comfortable', 'clean', 'spacious', 'friendly staff', 'great service', 'convenient location', 'cozy', 'elegant', 'amenities'},
-                'negative': {'dirty', 'noisy', 'uncomfortable', 'rude staff', 'poor service', 'overpriced', 'crowded', 'small rooms', 'inconvenient', 'unhygienic'},
-                'neutral_markers': {'average', 'basic', 'standard', 'decent', 'adequate'}
+            'neutral_markers': {
+                'average', 'standard', 'typical', 'expected', 'common',
+                'generic', 'industry-standard', 'normal', 'ordinary'
+            }
+        },
+        'software': {
+            'positive': {
+                'user-friendly', 'intuitive', 'fast', 'robust', 'feature-rich',
+                'versatile', 'stable', 'secure', 'efficient', 'scalable',
+                'lightweight', 'modern', 'responsive', 'well-documented',
+                'high-quality', 'streamlined', 'flexible'
             },
-            'travel': {
-                'positive': {'adventurous', 'exciting', 'breathtaking', 'relaxing', 'memorable', 'spectacular', 'unforgettable', 'scenic', 'enjoyable', 'fascinating'},
-                'negative': {'boring', 'tiring', 'stressful', 'disappointing', 'dangerous', 'overrated', 'expensive', 'crowded', 'dull', 'tedious'},
-                'neutral_markers': {'ordinary', 'mediocre', 'typical', 'expected', 'standard'}
+            'negative': {
+                'crashes', 'unresponsive', 'complicated', 'glitchy', 'slow',
+                'insecure', 'outdated', 'buggy', 'limited', 'inefficient',
+                'laggy', 'overly complex', 'resource-intensive', 'unstable'
             },
-            'education': {
-                'positive': {'informative', 'engaging', 'comprehensive', 'enlightening', 'inspirational', 'effective', 'supportive', 'innovative', 'challenging', 'rewarding'},
-                'negative': {'boring', 'uninformative', 'confusing', 'ineffective', 'unhelpful', 'outdated', 'dull', 'frustrating', 'disorganized', 'stressful'},
-                'neutral_markers': {'average', 'typical', 'standard', 'basic', 'mediocre'}
+            'neutral_markers': {
+                'adequate', 'functional', 'standard', 'acceptable', 'usable',
+                'basic', 'typical', 'common', 'ordinary'
+            }
+        },
+        'hotel': {
+            'positive': {
+                'luxurious', 'comfortable', 'clean', 'spacious', 'friendly staff',
+                'great service', 'convenient location', 'cozy', 'elegant',
+                'amenities', 'welcoming', 'serene', 'well-maintained',
+                'beautiful decor'
             },
-            'ecommerce': {
-                'positive': {'convenient', 'fast shipping', 'great deals', 'user-friendly', 'secure', 'reliable', 'efficient', 'wide selection', 'responsive', 'satisfactory'},
-                'negative': {'delayed', 'poor customer service', 'fraudulent', 'difficult navigation', 'unreliable', 'damaged goods', 'overpriced', 'confusing', 'limited options', 'slow'},
-                'neutral_markers': {'average', 'acceptable', 'standard', 'typical', 'satisfactory'}
+            'negative': {
+                'dirty', 'noisy', 'uncomfortable', 'rude staff', 'poor service',
+                'overpriced', 'crowded', 'small rooms', 'inconvenient',
+                'unhygienic', 'neglected', 'musty', 'unfriendly atmosphere'
             },
-            'social media': {
-                'positive': {'engaging', 'interactive', 'innovative', 'user-friendly', 'connective', 'fun', 'inspiring', 'entertaining', 'informative'},
-                'negative': {'toxic', 'privacy concerns', 'cyberbullying', 'spam', 'fake news', 'unreliable', 'time-consuming', 'annoying ads', 'glitchy'},
-                'neutral_markers': {'common', 'average', 'typical', 'standard', 'expected'}
+            'neutral_markers': {
+                'average', 'basic', 'standard', 'decent', 'adequate',
+                'typical', 'moderate', 'ordinary'
+            }
+        },
+        'travel': {
+            'positive': {
+                'adventurous', 'exciting', 'breathtaking', 'relaxing', 'memorable',
+                'spectacular', 'unforgettable', 'scenic', 'enjoyable',
+                'fascinating', 'refreshing', 'exotic', 'inspiring'
             },
-            'healthcare': {
-                'positive': {'caring', 'professional', 'compassionate', 'knowledgeable', 'efficient', 'reliable', 'thorough', 'state-of-the-art', 'clean', 'responsive'},
-                'negative': {'rude', 'unprofessional', 'inefficient', 'uncaring', 'dirty', 'long wait times', 'expensive', 'misdiagnosis', 'negligent', 'incompetent'},
-                'neutral_markers': {'standard', 'average', 'typical', 'adequate', 'sufficient'}
+            'negative': {
+                'boring', 'tiring', 'stressful', 'disappointing', 'dangerous',
+                'overrated', 'expensive', 'crowded', 'dull', 'tedious',
+                'hectic', 'underwhelming'
+            },
+            'neutral_markers': {
+                'ordinary', 'mediocre', 'typical', 'expected', 'standard',
+                'common', 'average'
+            }
+        },
+        'education': {
+            'positive': {
+                'informative', 'engaging', 'comprehensive', 'enlightening',
+                'inspirational', 'effective', 'supportive', 'innovative',
+                'challenging', 'rewarding', 'stimulating', 'thought-provoking'
+            },
+            'negative': {
+                'boring', 'uninformative', 'confusing', 'ineffective', 'unhelpful',
+                'outdated', 'dull', 'frustrating', 'disorganized', 'stressful',
+                'tedious', 'demotivating'
+            },
+            'neutral_markers': {
+                'average', 'typical', 'standard', 'basic', 'mediocre',
+                'common', 'normal'
+            }
+        },
+        'ecommerce': {
+            'positive': {
+                'convenient', 'fast shipping', 'great deals', 'user-friendly',
+                'secure', 'reliable', 'efficient', 'wide selection',
+                'responsive', 'satisfactory', 'seamless checkout', 'reputable',
+                'personalized recommendations', 'competitive pricing',
+                'fast delivery', 'trusted brand', 'hassle-free returns',
+                'variety of payment options', 'transparent policies',
+                'product variety', 'discounts', 'excellent packaging',
+                'loyalty rewards'
+            },
+            'negative': {
+                'delayed', 'poor customer service', 'fraudulent',
+                'difficult navigation', 'unreliable', 'damaged goods',
+                'overpriced', 'confusing', 'limited options', 'slow',
+                'hidden fees', 'misleading product descriptions',
+                'unresponsive seller', 'compromised data', 'faulty items',
+                'no tracking', 'unexpected charges', 'clunky checkout'
+            },
+            'neutral_markers': {
+                'average', 'acceptable', 'standard', 'typical', 'satisfactory',
+                'typical shipping times', 'average offers', 'standard selection',
+                'expected product range', 'common disclaimers', 'routine process'
+            }
+        },
+        'social media': {
+            'positive': {
+                'engaging', 'interactive', 'innovative', 'user-friendly',
+                'connective', 'fun', 'inspiring', 'entertaining', 'informative',
+                'immersive', 'community-driven'
+            },
+            'negative': {
+                'toxic', 'privacy concerns', 'cyberbullying', 'spam', 'fake news',
+                'unreliable', 'time-consuming', 'annoying ads', 'glitchy',
+                'data harvesting'
+            },
+            'neutral_markers': {
+                'common', 'average', 'typical', 'standard', 'expected',
+                'everyday', 'usual'
+            }
+        },
+        'healthcare': {
+            'positive': {
+                'caring', 'professional', 'compassionate', 'knowledgeable',
+                'efficient', 'reliable', 'thorough', 'state-of-the-art', 'clean',
+                'responsive', 'holistic', 'empathetic', 'organized',
+                'well-staffed', 'advanced equipment', 'pain-free', 'life-saving',
+                'top-notch', 'well-maintained', 'safe', 'reassuring',
+                'transparent', 'trustworthy', 'cutting-edge procedures',
+                'patient-centered', 'comprehensive care'
+            },
+            'negative': {
+                'rude', 'unprofessional', 'inefficient', 'uncaring', 'dirty',
+                'long wait times', 'expensive', 'misdiagnosis', 'negligent',
+                'incompetent', 'traumatic', 'haphazard', 'unattentive staff',
+                'exorbitant costs', 'lack of resources', 'harsh environment',
+                'slow response', 'impersonal treatment'
+            },
+            'neutral_markers': {
+                'standard', 'average', 'typical', 'adequate', 'sufficient',
+                'routine', 'regulated', 'regular check-ups', 'common practice',
+                'ordinary', 'normal procedures'
             }
         }
+    }
